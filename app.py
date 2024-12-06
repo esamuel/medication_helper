@@ -401,7 +401,7 @@ def reset_data():
     return redirect(url_for('index'))
 
 # Create tables and initialize database
-def init_db():
+def init_db(add_sample_data=False):
     with app.app_context():
         try:
             # Create any missing tables first
@@ -440,115 +440,114 @@ def init_db():
                 
                 logger.info("Successfully added reminder columns")
             
-            # Add sample data if the database is empty
-            if not Medication.query.first():
-                logger.info("Adding sample medications")
-                sample_medications = [
-                    Medication(
-                        name="Aspirin",
-                        dosage="81mg",
-                        frequency="Once daily",
-                        time="Morning",
-                        notes="Take with food",
-                        reminder_enabled=True,
-                        reminder_times="08:00"
-                    ),
-                    Medication(
-                        name="Vitamin D",
-                        dosage="2000 IU",
-                        frequency="Once daily",
-                        time="Morning",
-                        notes="Take with breakfast",
-                        reminder_enabled=True,
-                        reminder_times="09:00"
-                    ),
-                    Medication(
-                        name="Metformin",
-                        dosage="500mg",
-                        frequency="Twice daily",
-                        time="Morning and Evening",
-                        notes="Take with meals",
-                        reminder_enabled=True,
-                        reminder_times="08:00,20:00"
-                    )
-                ]
-                for med in sample_medications:
-                    db.session.add(med)
-                
-                try:
-                    db.session.commit()
-                    logger.info(f"Added {len(sample_medications)} sample medications")
-                except Exception as e:
-                    logger.error(f"Error adding medications: {str(e)}")
-                    db.session.rollback()
-
-            # Add sample vital signs if none exist
-            if not VitalSigns.query.first():
-                logger.info("Adding sample vital signs")
-                # Create two weeks of test data
-                test_data = []
-                current_time = datetime.now()
-                for day in range(14):  # 14 days
-                    base_date = current_time - timedelta(days=14-day)
-                    # Morning reading
-                    test_data.append(
-                        VitalSigns(
-                            date_time=base_date.replace(hour=8, minute=0),  # 8 AM
-                            systolic_bp=120 + (day % 5) - 2,  # Varying between 118-123
-                            diastolic_bp=80 + (day % 3) - 1,  # Varying between 79-82
-                            heart_rate=70 + (day % 6) - 2,    # Varying between 68-74
-                            temperature=36.5 + (day % 4) * 0.1,  # Varying between 36.5-36.8
-                            respiratory_rate=14 + (day % 3),   # Varying between 14-16
-                            oxygen_saturation=97 + (day % 3),  # Varying between 97-99
-                            blood_sugar=5.0 + (day % 6) * 0.1,  # Varying between 5.0-5.5
-                            notes="Morning reading"
+            # Only add sample data if explicitly requested
+            if add_sample_data:
+                if not Medication.query.first():
+                    logger.info("Adding sample medications")
+                    sample_medications = [
+                        Medication(
+                            name="Aspirin",
+                            dosage="81mg",
+                            frequency="Once daily",
+                            time="Morning",
+                            notes="Take with food",
+                            reminder_enabled=True,
+                            reminder_times="08:00"
+                        ),
+                        Medication(
+                            name="Vitamin D",
+                            dosage="2000 IU",
+                            frequency="Once daily",
+                            time="Morning",
+                            notes="Take with breakfast",
+                            reminder_enabled=True,
+                            reminder_times="09:00"
+                        ),
+                        Medication(
+                            name="Metformin",
+                            dosage="500mg",
+                            frequency="Twice daily",
+                            time="Morning and Evening",
+                            notes="Take with meals",
+                            reminder_enabled=True,
+                            reminder_times="08:00,20:00"
                         )
-                    )
+                    ]
+                    for med in sample_medications:
+                        db.session.add(med)
                     
-                    # Evening reading
-                    test_data.append(
-                        VitalSigns(
-                            date_time=base_date.replace(hour=20, minute=0),  # 8 PM
-                            systolic_bp=118 + (day % 4) - 1,  # Slightly different variation
-                            diastolic_bp=78 + (day % 3) - 1,
-                            heart_rate=72 + (day % 5) - 2,    # Usually higher in evening
-                            temperature=36.7 + (day % 3) * 0.1,
-                            respiratory_rate=15 + (day % 2),
-                            oxygen_saturation=98 + (day % 2),
-                            blood_sugar=5.2 + (day % 5) * 0.1,
-                            notes="Evening reading"
+                    try:
+                        db.session.commit()
+                        logger.info(f"Added {len(sample_medications)} sample medications")
+                    except Exception as e:
+                        logger.error(f"Error adding medications: {str(e)}")
+                        db.session.rollback()
+
+                if not VitalSigns.query.first():
+                    logger.info("Adding sample vital signs")
+                    # Create two weeks of test data
+                    test_data = []
+                    current_time = datetime.now()
+                    for day in range(14):  # 14 days
+                        base_date = current_time - timedelta(days=14-day)
+                        # Morning reading
+                        test_data.append(
+                            VitalSigns(
+                                date_time=base_date.replace(hour=8, minute=0),  # 8 AM
+                                systolic_bp=120 + (day % 5) - 2,  # Varying between 118-123
+                                diastolic_bp=80 + (day % 3) - 1,  # Varying between 79-82
+                                heart_rate=70 + (day % 6) - 2,    # Varying between 68-74
+                                temperature=36.5 + (day % 4) * 0.1,  # Varying between 36.5-36.8
+                                respiratory_rate=14 + (day % 3),   # Varying between 14-16
+                                oxygen_saturation=97 + (day % 3),  # Varying between 97-99
+                                blood_sugar=5.0 + (day % 6) * 0.1,  # Varying between 5.0-5.5
+                                notes="Morning reading"
+                            )
                         )
+                        
+                        # Evening reading
+                        test_data.append(
+                            VitalSigns(
+                                date_time=base_date.replace(hour=20, minute=0),  # 8 PM
+                                systolic_bp=118 + (day % 4) - 1,  # Slightly different variation
+                                diastolic_bp=78 + (day % 3) - 1,
+                                heart_rate=72 + (day % 5) - 2,    # Usually higher in evening
+                                temperature=36.7 + (day % 3) * 0.1,
+                                respiratory_rate=15 + (day % 2),
+                                oxygen_saturation=98 + (day % 2),
+                                blood_sugar=5.2 + (day % 5) * 0.1,
+                                notes="Evening reading"
+                            )
+                        )
+                    
+                    for vital in test_data:
+                        db.session.add(vital)
+                    
+                    try:
+                        db.session.commit()
+                        logger.info(f"Added {len(test_data)} sample vital signs readings")
+                    except Exception as e:
+                        logger.error(f"Error adding vital signs: {str(e)}")
+                        db.session.rollback()
+                
+                if not UserProfile.query.first():
+                    default_profile = UserProfile(
+                        name="Default User",
+                        date_of_birth=datetime.now() - timedelta(days=365*30),  # 30 years old
+                        gender="Not Specified",
+                        weight=70.0,  # kg
+                        height=170.0,  # cm
+                        blood_type="Not Specified",
+                        allergies="None",
+                        medical_conditions="None"
                     )
-                
-                for vital in test_data:
-                    db.session.add(vital)
-                
-                try:
-                    db.session.commit()
-                    logger.info(f"Added {len(test_data)} sample vital signs readings")
-                except Exception as e:
-                    logger.error(f"Error adding vital signs: {str(e)}")
-                    db.session.rollback()
-            
-            # Check if we need to create a default user profile
-            if not UserProfile.query.first():
-                default_profile = UserProfile(
-                    name="Default User",
-                    date_of_birth=datetime.now() - timedelta(days=365*30),  # 30 years old
-                    gender="Not Specified",
-                    weight=70.0,  # kg
-                    height=170.0,  # cm
-                    blood_type="Not Specified",
-                    allergies="None",
-                    medical_conditions="None"
-                )
-                db.session.add(default_profile)
-                try:
-                    db.session.commit()
-                    logger.info("Created default user profile")
-                except Exception as e:
-                    logger.error(f"Error creating user profile: {str(e)}")
-                    db.session.rollback()
+                    db.session.add(default_profile)
+                    try:
+                        db.session.commit()
+                        logger.info("Created default user profile")
+                    except Exception as e:
+                        logger.error(f"Error creating user profile: {str(e)}")
+                        db.session.rollback()
 
         except Exception as e:
             logger.error(f"Error initializing database: {str(e)}")
@@ -556,10 +555,10 @@ def init_db():
             raise
 
 # Initialize database when the app starts
-init_db()
+init_db(add_sample_data=False)  # Don't add sample data by default
 
 if __name__ == '__main__':
     app.run(debug=True)
 else:
     # Initialize database when running under Gunicorn
-    init_db()
+    init_db(add_sample_data=False)  # Don't add sample data by default
