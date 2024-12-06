@@ -1,93 +1,84 @@
 {% extends "base.html" %}
 
-{% block title %}My Profile{% endblock %}
+{% block title %}User Profile{% endblock %}
 
 {% block content %}
-<div class="card">
-    <div class="card-header">
-        <h2 class="mb-0">My Profile</h2>
-    </div>
-    <div class="card-body">
-        <form method="POST">
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label for="first_name" class="form-label">First Name</label>
-                    <input type="text" class="form-control" id="first_name" name="first_name" 
-                           value="{{ profile.first_name }}" required>
+<div class="container">
+    <h1 class="mb-4">User Profile</h1>
+    
+    <div class="card">
+        <div class="card-body">
+            <form method="POST">
+                <div class="mb-3">
+                    <label for="name" class="form-label">Full Name</label>
+                    <input type="text" class="form-control" id="name" name="name" value="{{ profile.name }}" required>
                 </div>
-                <div class="col-md-6 mb-3">
-                    <label for="last_name" class="form-label">Last Name</label>
-                    <input type="text" class="form-control" id="last_name" name="last_name" 
-                           value="{{ profile.last_name }}" required>
-                </div>
-            </div>
 
-            <div class="row">
-                <div class="col-md-4 mb-3">
+                <div class="mb-3">
                     <label for="date_of_birth" class="form-label">Date of Birth</label>
                     <input type="date" class="form-control" id="date_of_birth" name="date_of_birth" 
-                           value="{{ profile.date_of_birth }}" required>
+                           value="{{ profile.date_of_birth.strftime('%Y-%m-%d') if profile.date_of_birth else '' }}" required>
                 </div>
-                <div class="col-md-4 mb-3">
-                    <label for="height" class="form-label">Height (cm)</label>
-                    <input type="number" step="0.1" class="form-control" id="height" name="height" 
-                           value="{{ profile.height }}" required>
+
+                <div class="mb-3">
+                    <label for="gender" class="form-label">Gender</label>
+                    <select class="form-select" id="gender" name="gender">
+                        <option value="Not Specified" {% if profile.gender == 'Not Specified' %}selected{% endif %}>Prefer not to say</option>
+                        <option value="Male" {% if profile.gender == 'Male' %}selected{% endif %}>Male</option>
+                        <option value="Female" {% if profile.gender == 'Female' %}selected{% endif %}>Female</option>
+                        <option value="Other" {% if profile.gender == 'Other' %}selected{% endif %}>Other</option>
+                    </select>
                 </div>
-                <div class="col-md-4 mb-3">
-                    <label for="weight" class="form-label">Weight (kg)</label>
-                    <input type="number" step="0.1" class="form-control" id="weight" name="weight" 
-                           value="{{ profile.weight }}" required>
+
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="height" class="form-label">Height (cm)</label>
+                            <input type="number" step="0.1" class="form-control" id="height" name="height" 
+                                   value="{{ '%.1f' % profile.height if profile.height else '' }}">
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label for="weight" class="form-label">Weight (kg)</label>
+                            <input type="number" step="0.1" class="form-control" id="weight" name="weight" 
+                                   value="{{ '%.1f' % profile.weight if profile.weight else '' }}">
+                        </div>
+                    </div>
                 </div>
-            </div>
 
-            <div class="mb-3">
-                <label for="blood_type" class="form-label">Blood Type</label>
-                <select class="form-select" id="blood_type" name="blood_type">
-                    <option value="">Select blood type</option>
-                    {% for blood_type in ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'] %}
-                        <option value="{{ blood_type }}" {% if profile.blood_type == blood_type %}selected{% endif %}>
-                            {{ blood_type }}
-                        </option>
-                    {% endfor %}
-                </select>
-            </div>
-
-            <div class="mb-3">
-                <label for="allergies" class="form-label">Allergies</label>
-                <textarea class="form-control" id="allergies" name="allergies" rows="2" 
-                          placeholder="List any allergies...">{{ profile.allergies }}</textarea>
-            </div>
-
-            <div class="mb-3">
-                <label for="medical_conditions" class="form-label">Medical Conditions</label>
-                <textarea class="form-control" id="medical_conditions" name="medical_conditions" rows="3" 
-                          placeholder="List any medical conditions...">{{ profile.medical_conditions }}</textarea>
-            </div>
-
-            <div class="row">
-                <div class="col-md-6 mb-3">
-                    <label for="emergency_contact_name" class="form-label">Emergency Contact Name</label>
-                    <input type="text" class="form-control" id="emergency_contact_name" 
-                           name="emergency_contact_name" value="{{ profile.emergency_contact_name }}">
+                <div class="mb-3">
+                    <label for="blood_type" class="form-label">Blood Type</label>
+                    <select class="form-select" id="blood_type" name="blood_type">
+                        <option value="" {% if not profile.blood_type %}selected{% endif %}>Unknown</option>
+                        <option value="A+" {% if profile.blood_type == 'A+' %}selected{% endif %}>A+</option>
+                        <option value="A-" {% if profile.blood_type == 'A-' %}selected{% endif %}>A-</option>
+                        <option value="B+" {% if profile.blood_type == 'B+' %}selected{% endif %}>B+</option>
+                        <option value="B-" {% if profile.blood_type == 'B-' %}selected{% endif %}>B-</option>
+                        <option value="AB+" {% if profile.blood_type == 'AB+' %}selected{% endif %}>AB+</option>
+                        <option value="AB-" {% if profile.blood_type == 'AB-' %}selected{% endif %}>AB-</option>
+                        <option value="O+" {% if profile.blood_type == 'O+' %}selected{% endif %}>O+</option>
+                        <option value="O-" {% if profile.blood_type == 'O-' %}selected{% endif %}>O-</option>
+                    </select>
                 </div>
-                <div class="col-md-6 mb-3">
-                    <label for="emergency_contact_phone" class="form-label">Emergency Contact Phone</label>
-                    <input type="tel" class="form-control" id="emergency_contact_phone" 
-                           name="emergency_contact_phone" value="{{ profile.emergency_contact_phone }}">
-                </div>
-            </div>
 
-            <div class="d-flex justify-content-between">
-                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Back to Medications</a>
-                <button type="submit" class="btn btn-primary">Save Profile</button>
-            </div>
-        </form>
+                <div class="mb-3">
+                    <label for="allergies" class="form-label">Allergies</label>
+                    <textarea class="form-control" id="allergies" name="allergies" rows="3">{{ profile.allergies }}</textarea>
+                    <div class="form-text">List any allergies, including medications, foods, or other substances.</div>
+                </div>
+
+                <div class="mb-3">
+                    <label for="medical_conditions" class="form-label">Medical Conditions</label>
+                    <textarea class="form-control" id="medical_conditions" name="medical_conditions" rows="3">{{ profile.medical_conditions }}</textarea>
+                    <div class="form-text">List any chronic conditions, past surgeries, or other relevant medical history.</div>
+                </div>
+
+                <div class="text-end">
+                    <button type="submit" class="btn btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
-
-{% if profile.last_updated %}
-<div class="text-muted mt-3 text-end">
-    Last updated: {{ profile.last_updated.strftime('%Y-%m-%d %H:%M:%S') }}
-</div>
-{% endif %}
 {% endblock %}

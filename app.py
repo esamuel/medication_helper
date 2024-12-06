@@ -66,14 +66,15 @@ class Medication(db.Model):
 
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    first_name = db.Column(db.String(50), nullable=False)
-    last_name = db.Column(db.String(50), nullable=False)
-    date_of_birth = db.Column(db.Date, nullable=False)
-    height = db.Column(db.Float)  # in cm
-    weight = db.Column(db.Float)  # in kg
-    blood_type = db.Column(db.String(5))
+    name = db.Column(db.String(100), nullable=False)
+    date_of_birth = db.Column(db.DateTime)
+    gender = db.Column(db.String(20))
+    weight = db.Column(db.Float)
+    height = db.Column(db.Float)
+    blood_type = db.Column(db.String(10))
     allergies = db.Column(db.Text)
     medical_conditions = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class EmergencyContact(db.Model):
@@ -195,21 +196,20 @@ def profile():
     profile = UserProfile.query.first()
     if profile is None:
         profile = UserProfile(
-            first_name='',
-            last_name='',
-            date_of_birth=datetime.now().date(),
-            height=0,
-            weight=0
+            name="Default User",
+            date_of_birth=datetime.now(),
+            weight=0,
+            height=0
         )
         db.session.add(profile)
         db.session.commit()
 
     if request.method == 'POST':
-        profile.first_name = request.form['first_name']
-        profile.last_name = request.form['last_name']
-        profile.date_of_birth = datetime.strptime(request.form['date_of_birth'], '%Y-%m-%d').date()
-        profile.height = float(request.form['height'])
+        profile.name = request.form['name']
+        profile.date_of_birth = datetime.strptime(request.form['date_of_birth'], '%Y-%m-%d')
         profile.weight = float(request.form['weight'])
+        profile.height = float(request.form['height'])
+        profile.gender = request.form['gender']
         profile.blood_type = request.form['blood_type']
         profile.allergies = request.form['allergies']
         profile.medical_conditions = request.form['medical_conditions']
@@ -389,33 +389,49 @@ def check_reminders():
 def init_db():
     with app.app_context():
         try:
+            # Create any missing tables first
+            db.create_all()
+            app.logger.info("Database tables verified/created successfully")
+            
             # Check if we need to add new columns to the Medication table
             inspector = db.inspect(db.engine)
             existing_columns = [c['name'] for c in inspector.get_columns('medication')]
             
             if 'reminder_enabled' not in existing_columns:
                 app.logger.info("Adding reminder columns to Medication table")
-                with db.engine.connect() as conn:
-                    conn.execute(db.text(
-                        "ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT FALSE;"
-                        "ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500);"
-                        "ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"
-                    ))
-                    conn.commit()
+                # Use PostgreSQL-specific syntax when using PostgreSQL
+                if 'postgresql' in str(db.engine.url):
+                    with db.engine.connect() as conn:
+                        conn.execute(db.text(
+                            """
+                            ALTER TABLE medication 
+                            ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN DEFAULT FALSE,
+                            ADD COLUMN IF NOT EXISTS reminder_times VARCHAR(500),
+                            ADD COLUMN IF NOT EXISTS last_reminded TIMESTAMP;
+                            """
+                        ))
+                        conn.commit()
+                else:
+                    # SQLite syntax for local development
+                    with db.engine.connect() as conn:
+                        try:
+                            conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT FALSE;"))
+                            conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500);"))
+                            conn.execute(db.text("ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"))
+                            conn.commit()
+                        except Exception as e:
+                            app.logger.warning(f"Column might already exist: {str(e)}")
+                            conn.rollback()
+                
                 app.logger.info("Successfully added reminder columns")
-            
-            # Create any missing tables
-            db.create_all()
-            app.logger.info("Database tables verified/created successfully")
             
             # Check if we need to create a default user profile
             if not UserProfile.query.first():
                 default_profile = UserProfile(
-                    first_name="Default User",
-                    last_name="",
-                    date_of_birth=datetime.now().date(),
-                    height=0,
+                    name="Default User",
+                    date_of_birth=datetime.now(),
                     weight=0,
+                    height=0,
                     blood_type="",
                     allergies="",
                     medical_conditions=""
@@ -429,7 +445,7 @@ def init_db():
 
 if __name__ == '__main__':
     init_db()
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    app.run(debug=True)
 else:
     # Initialize database when running under Gunicorn
     init_db()
