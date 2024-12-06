@@ -2,8 +2,12 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+from dotenv import load_dotenv
 import sys
 import logging
+
+# Load environment variables from .env file if it exists
+load_dotenv()
 
 # Configure logging
 logging.basicConfig(
@@ -15,8 +19,17 @@ logging.basicConfig(
 app = Flask(__name__)
 app.logger.info('Starting up the Flask application...')
 
-# Use environment variables for sensitive configuration
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
+# Use environment variables for configuration
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+if not app.config['SECRET_KEY']:
+    app.logger.error('No SECRET_KEY set in environment variables!')
+    raise ValueError('No SECRET_KEY set in environment variables!')
+
+# Set the environment
+FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
+app.config['DEBUG'] = FLASK_ENV == 'development'
+
+app.logger.info(f'Running in {FLASK_ENV} environment')
 
 # Database configuration - use PostgreSQL in production, SQLite in development
 DATABASE_URL = os.environ.get('DATABASE_URL')
