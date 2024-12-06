@@ -389,8 +389,24 @@ def check_reminders():
 def init_db():
     with app.app_context():
         try:
+            # Check if we need to add new columns to the Medication table
+            inspector = db.inspect(db.engine)
+            existing_columns = [c['name'] for c in inspector.get_columns('medication')]
+            
+            if 'reminder_enabled' not in existing_columns:
+                app.logger.info("Adding reminder columns to Medication table")
+                with db.engine.connect() as conn:
+                    conn.execute(db.text(
+                        "ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT FALSE;"
+                        "ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500);"
+                        "ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"
+                    ))
+                    conn.commit()
+                app.logger.info("Successfully added reminder columns")
+            
+            # Create any missing tables
             db.create_all()
-            app.logger.info("Database tables created successfully")
+            app.logger.info("Database tables verified/created successfully")
             
             # Check if we need to create a default user profile
             if not UserProfile.query.first():
