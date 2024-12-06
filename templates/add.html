@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block title %}Add Medication{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="mb-0">Add New Medication</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Medication Name</label>
+                <input type="text" class="form-control" id="name" name="name" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="dosage" class="form-label">Dosage</label>
+                <input type="text" class="form-control" id="dosage" name="dosage" 
+                       placeholder="e.g., 500mg" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="frequency" class="form-label">Frequency</label>
+                <select class="form-select" id="frequency" name="frequency" required>
+                    <option value="">Select frequency</option>
+                    <option value="Once daily">Once daily</option>
+                    <option value="Twice daily">Twice daily</option>
+                    <option value="Three times daily">Three times daily</option>
+                    <option value="Every 4 hours">Every 4 hours</option>
+                    <option value="Every 6 hours">Every 6 hours</option>
+                    <option value="Every 8 hours">Every 8 hours</option>
+                    <option value="As needed">As needed</option>
+                    <option value="Weekly">Weekly</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <label for="time" class="form-label">Time</label>
+                <input type="time" class="form-control" id="time" name="time" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="notes" class="form-label">Notes (Optional)</label>
+                <textarea class="form-control" id="notes" name="notes" rows="3"
+                          placeholder="Add any special instructions or notes here"></textarea>
+            </div>
+            
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Add Medication</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

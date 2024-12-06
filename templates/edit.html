@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+
+{% block title %}Edit Medication{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="mb-0">Edit Medication</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="mb-3">
+                <label for="name" class="form-label">Medication Name</label>
+                <input type="text" class="form-control" id="name" name="name" 
+                       value="{{ medication.name }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="dosage" class="form-label">Dosage</label>
+                <input type="text" class="form-control" id="dosage" name="dosage" 
+                       value="{{ medication.dosage }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="frequency" class="form-label">Frequency</label>
+                <select class="form-select" id="frequency" name="frequency" required>
+                    <option value="">Select frequency</option>
+                    <option value="Once daily" {% if medication.frequency == 'Once daily' %}selected{% endif %}>Once daily</option>
+                    <option value="Twice daily" {% if medication.frequency == 'Twice daily' %}selected{% endif %}>Twice daily</option>
+                    <option value="Three times daily" {% if medication.frequency == 'Three times daily' %}selected{% endif %}>Three times daily</option>
+                    <option value="Every 4 hours" {% if medication.frequency == 'Every 4 hours' %}selected{% endif %}>Every 4 hours</option>
+                    <option value="Every 6 hours" {% if medication.frequency == 'Every 6 hours' %}selected{% endif %}>Every 6 hours</option>
+                    <option value="Every 8 hours" {% if medication.frequency == 'Every 8 hours' %}selected{% endif %}>Every 8 hours</option>
+                    <option value="As needed" {% if medication.frequency == 'As needed' %}selected{% endif %}>As needed</option>
+                    <option value="Weekly" {% if medication.frequency == 'Weekly' %}selected{% endif %}>Weekly</option>
+                </select>
+            </div>
+            
+            <div class="mb-3">
+                <label for="time" class="form-label">Time</label>
+                <input type="time" class="form-control" id="time" name="time" 
+                       value="{{ medication.time }}" required>
+            </div>
+            
+            <div class="mb-3">
+                <label for="notes" class="form-label">Notes (Optional)</label>
+                <textarea class="form-control" id="notes" name="notes" rows="3">{{ medication.notes }}</textarea>
+            </div>
+            
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('index') }}" class="btn btn-outline-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Save Changes</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

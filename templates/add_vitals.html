@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+
+{% block title %}Record Vital Signs{% endblock %}
+
+{% block content %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="mb-0">Record Vital Signs</h2>
+    </div>
+    <div class="card-body">
+        <form method="POST">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="date_time" class="form-label">Date & Time</label>
+                    <input type="datetime-local" class="form-control" id="date_time" name="date_time" 
+                           value="{{ now.strftime('%Y-%m-%dT%H:%M') }}" required>
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="systolic_bp" class="form-label">Systolic Blood Pressure (mmHg)</label>
+                    <input type="number" class="form-control" id="systolic_bp" name="systolic_bp" 
+                           min="70" max="200" step="1">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="diastolic_bp" class="form-label">Diastolic Blood Pressure (mmHg)</label>
+                    <input type="number" class="form-control" id="diastolic_bp" name="diastolic_bp" 
+                           min="40" max="130" step="1">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label for="heart_rate" class="form-label">Heart Rate (bpm)</label>
+                    <input type="number" class="form-control" id="heart_rate" name="heart_rate" 
+                           min="30" max="220" step="1">
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label for="temperature" class="form-label">Temperature (°C)</label>
+                    <input type="number" class="form-control" id="temperature" name="temperature" 
+                           min="35" max="42" step="0.1">
+                </div>
+            </div>
+
+            <div class="row">
+                <div class="col-md-4 mb-3">
+                    <label for="respiratory_rate" class="form-label">Respiratory Rate (/min)</label>
+                    <input type="number" class="form-control" id="respiratory_rate" name="respiratory_rate" 
+                           min="8" max="40" step="1">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="oxygen_saturation" class="form-label">Oxygen Saturation (%)</label>
+                    <input type="number" class="form-control" id="oxygen_saturation" name="oxygen_saturation" 
+                           min="70" max="100" step="1">
+                </div>
+                <div class="col-md-4 mb-3">
+                    <label for="blood_sugar" class="form-label">Blood Sugar (mmol/L)</label>
+                    <input type="number" class="form-control" id="blood_sugar" name="blood_sugar" 
+                           min="1" max="30" step="0.1">
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label for="notes" class="form-label">Notes (Optional)</label>
+                <textarea class="form-control" id="notes" name="notes" rows="3"
+                          placeholder="Any additional observations or context..."></textarea>
+            </div>
+
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('vitals') }}" class="btn btn-outline-secondary">Cancel</a>
+                <button type="submit" class="btn btn-primary">Save Vitals</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <h4 class="mb-0">Normal Ranges Reference</h4>
+    </div>
+    <div class="card-body">
+        <div class="row">
+            <div class="col-md-6">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2"><strong>Blood Pressure:</strong> 90-120/60-80 mmHg</li>
+                    <li class="mb-2"><strong>Heart Rate:</strong> 60-100 bpm</li>
+                    <li class="mb-2"><strong>Temperature:</strong> 36.5-37.5°C</li>
+                </ul>
+            </div>
+            <div class="col-md-6">
+                <ul class="list-unstyled mb-0">
+                    <li class="mb-2"><strong>Respiratory Rate:</strong> 12-20 /min</li>
+                    <li class="mb-2"><strong>Oxygen Saturation:</strong> 95-100%</li>
+                    <li class="mb-2"><strong>Blood Sugar (fasting):</strong> 4.0-5.4 mmol/L</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
