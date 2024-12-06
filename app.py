@@ -425,20 +425,100 @@ def init_db():
                 
                 app.logger.info("Successfully added reminder columns")
             
+            # Add sample data if the database is empty
+            if not Medication.query.first():
+                app.logger.info("Adding sample medications")
+                sample_medications = [
+                    Medication(
+                        name="Aspirin",
+                        dosage="81mg",
+                        frequency="Once daily",
+                        time="Morning",
+                        notes="Take with food",
+                        reminder_enabled=True,
+                        reminder_times="08:00"
+                    ),
+                    Medication(
+                        name="Vitamin D",
+                        dosage="2000 IU",
+                        frequency="Once daily",
+                        time="Morning",
+                        notes="Take with breakfast",
+                        reminder_enabled=True,
+                        reminder_times="09:00"
+                    ),
+                    Medication(
+                        name="Metformin",
+                        dosage="500mg",
+                        frequency="Twice daily",
+                        time="Morning and Evening",
+                        notes="Take with meals",
+                        reminder_enabled=True,
+                        reminder_times="08:00,20:00"
+                    )
+                ]
+                for med in sample_medications:
+                    db.session.add(med)
+                db.session.commit()
+                app.logger.info(f"Added {len(sample_medications)} sample medications")
+
+            # Add sample vital signs if none exist
+            if not VitalSigns.query.first():
+                app.logger.info("Adding sample vital signs")
+                # Create two weeks of test data
+                test_data = []
+                for day in range(14):  # 14 days
+                    # Morning reading
+                    test_data.append(
+                        VitalSigns(
+                            date_time=datetime(2024, 1, 1 + day, 8, 0),  # 8 AM
+                            systolic_bp=120 + (day % 5) - 2,  # Varying between 118-123
+                            diastolic_bp=80 + (day % 3) - 1,  # Varying between 79-82
+                            heart_rate=70 + (day % 6) - 2,    # Varying between 68-74
+                            temperature=36.5 + (day % 4) * 0.1,  # Varying between 36.5-36.8
+                            respiratory_rate=14 + (day % 3),   # Varying between 14-16
+                            oxygen_saturation=97 + (day % 3),  # Varying between 97-99
+                            blood_sugar=5.0 + (day % 6) * 0.1,  # Varying between 5.0-5.5
+                            notes="Morning reading"
+                        )
+                    )
+                    
+                    # Evening reading
+                    test_data.append(
+                        VitalSigns(
+                            date_time=datetime(2024, 1, 1 + day, 20, 0),  # 8 PM
+                            systolic_bp=118 + (day % 4) - 1,  # Slightly different variation
+                            diastolic_bp=78 + (day % 3) - 1,
+                            heart_rate=72 + (day % 5) - 2,    # Usually higher in evening
+                            temperature=36.7 + (day % 3) * 0.1,
+                            respiratory_rate=15 + (day % 2),
+                            oxygen_saturation=98 + (day % 2),
+                            blood_sugar=5.2 + (day % 5) * 0.1,
+                            notes="Evening reading"
+                        )
+                    )
+                
+                for vital in test_data:
+                    db.session.add(vital)
+                db.session.commit()
+                app.logger.info(f"Added {len(test_data)} sample vital signs readings")
+            
             # Check if we need to create a default user profile
             if not UserProfile.query.first():
                 default_profile = UserProfile(
                     name="Default User",
                     date_of_birth=datetime.now(),
-                    weight=0,
-                    height=0,
+                    gender="Not Specified",
+                    weight=70,
+                    height=170,
                     blood_type="",
-                    allergies="",
-                    medical_conditions=""
+                    allergies="None",
+                    medical_conditions="None"
                 )
                 db.session.add(default_profile)
                 db.session.commit()
                 app.logger.info("Created default user profile")
+
         except Exception as e:
             app.logger.error(f"Error initializing database: {str(e)}")
             raise
