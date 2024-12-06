@@ -20,14 +20,15 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
 
 # Database configuration - use PostgreSQL in production, SQLite in development
 DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
-    # Heroku/Render provides DATABASE_URL starting with 'postgres://' but SQLAlchemy needs 'postgresql://'
-    DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
+if DATABASE_URL:
+    if DATABASE_URL.startswith('postgres://'):
+        # Heroku/Render provides DATABASE_URL starting with 'postgres://' but SQLAlchemy needs 'postgresql://'
+        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-    app.logger.info(f'Using PostgreSQL database')
+    app.logger.info('Using PostgreSQL database')
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medications.db'
-    app.logger.info(f'Using SQLite database')
+    app.logger.info('Using SQLite database')
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
@@ -311,49 +312,35 @@ def add_vitals():
     
     return render_template('add_vitals.html', now=datetime.now())
 
-if __name__ == '__main__':
+# Create tables and initialize database
+def init_db():
     with app.app_context():
-        db.create_all()
-        
-        # Add test vital signs if none exist
-        if not VitalSigns.query.first():
-            # Create two weeks of test data
-            test_data = []
-            for day in range(14):  # 14 days
-                # Morning reading
-                test_data.append(
-                    VitalSigns(
-                        date_time=datetime(2024, 1, 1 + day, 8, 0),  # 8 AM
-                        systolic_bp=120 + (day % 5) - 2,  # Varying between 118-123
-                        diastolic_bp=80 + (day % 3) - 1,  # Varying between 79-82
-                        heart_rate=70 + (day % 6) - 2,    # Varying between 68-74
-                        temperature=36.5 + (day % 4) * 0.1,  # Varying between 36.5-36.8
-                        respiratory_rate=14 + (day % 3),   # Varying between 14-16
-                        oxygen_saturation=97 + (day % 3),  # Varying between 97-99
-                        blood_sugar=5.0 + (day % 6) * 0.1,  # Varying between 5.0-5.5
-                        notes="Morning reading"
-                    )
-                )
-                
-                # Evening reading
-                test_data.append(
-                    VitalSigns(
-                        date_time=datetime(2024, 1, 1 + day, 20, 0),  # 8 PM
-                        systolic_bp=118 + (day % 4) - 1,  # Slightly different variation
-                        diastolic_bp=78 + (day % 3) - 1,
-                        heart_rate=72 + (day % 5) - 2,    # Usually higher in evening
-                        temperature=36.7 + (day % 3) * 0.1,
-                        respiratory_rate=15 + (day % 2),
-                        oxygen_saturation=98 + (day % 2),
-                        blood_sugar=5.2 + (day % 5) * 0.1,
-                        notes="Evening reading"
-                    )
-                )
+        try:
+            db.create_all()
+            app.logger.info("Database tables created successfully")
             
-            # Add all the test data
-            for vital in test_data:
-                db.session.add(vital)
-            db.session.commit()
-            print(f"Added {len(test_data)} test readings")
-            
+            # Check if we need to create a default user profile
+            if not UserProfile.query.first():
+                default_profile = UserProfile(
+                    first_name="Default User",
+                    last_name="",
+                    date_of_birth=datetime.now().date(),
+                    height=0,
+                    weight=0,
+                    blood_type="",
+                    allergies="",
+                    medical_conditions=""
+                )
+                db.session.add(default_profile)
+                db.session.commit()
+                app.logger.info("Created default user profile")
+        except Exception as e:
+            app.logger.error(f"Error initializing database: {str(e)}")
+            raise
+
+if __name__ == '__main__':
+    init_db()
     app.run(debug=True, host='0.0.0.0', port=5001)
+else:
+    # Initialize database when running under Gunicorn
+    init_db()
