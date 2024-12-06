@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime
+from datetime import datetime, timedelta
 import os
 from dotenv import load_dotenv
 import sys
@@ -459,19 +459,26 @@ def init_db():
                 ]
                 for med in sample_medications:
                     db.session.add(med)
-                db.session.commit()
-                app.logger.info(f"Added {len(sample_medications)} sample medications")
+                
+                try:
+                    db.session.commit()
+                    app.logger.info(f"Added {len(sample_medications)} sample medications")
+                except Exception as e:
+                    app.logger.error(f"Error adding medications: {str(e)}")
+                    db.session.rollback()
 
             # Add sample vital signs if none exist
             if not VitalSigns.query.first():
                 app.logger.info("Adding sample vital signs")
                 # Create two weeks of test data
                 test_data = []
+                current_time = datetime.now()
                 for day in range(14):  # 14 days
+                    base_date = current_time - timedelta(days=14-day)
                     # Morning reading
                     test_data.append(
                         VitalSigns(
-                            date_time=datetime(2024, 1, 1 + day, 8, 0),  # 8 AM
+                            date_time=base_date.replace(hour=8, minute=0),  # 8 AM
                             systolic_bp=120 + (day % 5) - 2,  # Varying between 118-123
                             diastolic_bp=80 + (day % 3) - 1,  # Varying between 79-82
                             heart_rate=70 + (day % 6) - 2,    # Varying between 68-74
@@ -486,7 +493,7 @@ def init_db():
                     # Evening reading
                     test_data.append(
                         VitalSigns(
-                            date_time=datetime(2024, 1, 1 + day, 20, 0),  # 8 PM
+                            date_time=base_date.replace(hour=20, minute=0),  # 8 PM
                             systolic_bp=118 + (day % 4) - 1,  # Slightly different variation
                             diastolic_bp=78 + (day % 3) - 1,
                             heart_rate=72 + (day % 5) - 2,    # Usually higher in evening
@@ -500,31 +507,43 @@ def init_db():
                 
                 for vital in test_data:
                     db.session.add(vital)
-                db.session.commit()
-                app.logger.info(f"Added {len(test_data)} sample vital signs readings")
+                
+                try:
+                    db.session.commit()
+                    app.logger.info(f"Added {len(test_data)} sample vital signs readings")
+                except Exception as e:
+                    app.logger.error(f"Error adding vital signs: {str(e)}")
+                    db.session.rollback()
             
             # Check if we need to create a default user profile
             if not UserProfile.query.first():
                 default_profile = UserProfile(
                     name="Default User",
-                    date_of_birth=datetime.now(),
+                    date_of_birth=datetime.now() - timedelta(days=365*30),  # 30 years old
                     gender="Not Specified",
-                    weight=70,
-                    height=170,
-                    blood_type="",
+                    weight=70.0,  # kg
+                    height=170.0,  # cm
+                    blood_type="Not Specified",
                     allergies="None",
                     medical_conditions="None"
                 )
                 db.session.add(default_profile)
-                db.session.commit()
-                app.logger.info("Created default user profile")
+                try:
+                    db.session.commit()
+                    app.logger.info("Created default user profile")
+                except Exception as e:
+                    app.logger.error(f"Error creating user profile: {str(e)}")
+                    db.session.rollback()
 
         except Exception as e:
             app.logger.error(f"Error initializing database: {str(e)}")
+            db.session.rollback()
             raise
 
+# Initialize database when the app starts
+init_db()
+
 if __name__ == '__main__':
-    init_db()
     app.run(debug=True)
 else:
     # Initialize database when running under Gunicorn
