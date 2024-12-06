@@ -9,9 +9,9 @@
         {% if profile %}
             <div class="d-flex justify-content-between align-items-center">
                 <div>
-                    <h2 class="mb-0">{{ profile.first_name }} {{ profile.last_name }}</h2>
-                    {% if age is not none %}
-                        <p class="text-muted mb-0">Age: {{ age }} years</p>
+                    <h2 class="mb-0">{{ profile.name }}</h2>
+                    {% if age_str is not none %}
+                        <p class="text-muted mb-0">Age: {{ age_str }}</p>
                     {% endif %}
                 </div>
                 <a href="{{ url_for('profile') }}" class="btn btn-outline-primary btn-sm">

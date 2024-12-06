@@ -95,9 +95,32 @@ def index():
     
     # Calculate age if date_of_birth is set
     age = None
+    age_str = None
     if profile and profile.date_of_birth:
         today = datetime.now()
-        age = today.year - profile.date_of_birth.year - ((today.month, today.day) < (profile.date_of_birth.month, profile.date_of_birth.day))
+        birth_date = profile.date_of_birth
+        
+        # Calculate years and months
+        years = today.year - birth_date.year
+        months = today.month - birth_date.month
+        
+        # Adjust if we haven't reached the birth day in current month
+        if today.day < birth_date.day:
+            months -= 1
+        
+        # Adjust years if months are negative
+        if months < 0:
+            years -= 1
+            months += 12
+        
+        # Format the age string
+        if months == 0:
+            age_str = f"{years} years"
+        else:
+            # Calculate decimal years for sorting/comparison
+            age = years + (months / 12)
+            # Format with one decimal place
+            age_str = f"{years} years, {months} months ({age:.1f} years)"
     
     # Get latest vital signs
     latest_vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).first()
@@ -118,6 +141,7 @@ def index():
     return render_template('index.html',
                          profile=profile,
                          age=age,
+                         age_str=age_str,
                          latest_vitals=latest_vitals,
                          medications=medications,
                          current_time=current_time)
