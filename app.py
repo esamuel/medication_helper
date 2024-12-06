@@ -2,8 +2,18 @@ from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
+import sys
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s %(levelname)s: %(message)s',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 app = Flask(__name__)
+app.logger.info('Starting up the Flask application...')
 
 # Use environment variables for sensitive configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'your-secret-key-here')
@@ -14,10 +24,19 @@ if DATABASE_URL and DATABASE_URL.startswith('postgres://'):
     # Heroku/Render provides DATABASE_URL starting with 'postgres://' but SQLAlchemy needs 'postgresql://'
     DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
+    app.logger.info(f'Using PostgreSQL database')
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medications.db'
+    app.logger.info(f'Using SQLite database')
 
-db = SQLAlchemy(app)
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+try:
+    db = SQLAlchemy(app)
+    app.logger.info('SQLAlchemy initialized successfully')
+except Exception as e:
+    app.logger.error(f'Error initializing SQLAlchemy: {str(e)}')
+    raise
 
 class Medication(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -111,7 +130,8 @@ def add_medication():
             db.session.commit()
             flash('Medication added successfully!', 'success')
             return redirect(url_for('index'))
-        except:
+        except Exception as e:
+            app.logger.error(f'Error adding medication: {str(e)}')
             flash('There was an error adding your medication.', 'error')
             return redirect(url_for('add_medication'))
 
@@ -132,7 +152,8 @@ def edit_medication(id):
             db.session.commit()
             flash('Medication updated successfully!', 'success')
             return redirect(url_for('index'))
-        except:
+        except Exception as e:
+            app.logger.error(f'Error updating medication: {str(e)}')
             flash('There was an error updating your medication.', 'error')
             return redirect(url_for('edit_medication', id=id))
 
@@ -146,7 +167,8 @@ def delete_medication(id):
         db.session.delete(medication)
         db.session.commit()
         flash('Medication deleted successfully!', 'success')
-    except:
+    except Exception as e:
+        app.logger.error(f'Error deleting medication: {str(e)}')
         flash('There was an error deleting your medication.', 'error')
     
     return redirect(url_for('index'))
@@ -178,7 +200,8 @@ def profile():
         try:
             db.session.commit()
             flash('Profile updated successfully!', 'success')
-        except:
+        except Exception as e:
+            app.logger.error(f'Error updating profile: {str(e)}')
             db.session.rollback()
             flash('Error updating profile.', 'error')
 
@@ -207,7 +230,8 @@ def add_emergency_contact():
             db.session.commit()
             flash('Emergency contact added successfully!', 'success')
             return redirect(url_for('emergency_contacts'))
-        except:
+        except Exception as e:
+            app.logger.error(f'Error adding emergency contact: {str(e)}')
             db.session.rollback()
             flash('Error adding emergency contact.', 'error')
     
@@ -230,7 +254,8 @@ def edit_emergency_contact(id):
             db.session.commit()
             flash('Emergency contact updated successfully!', 'success')
             return redirect(url_for('emergency_contacts'))
-        except:
+        except Exception as e:
+            app.logger.error(f'Error updating emergency contact: {str(e)}')
             db.session.rollback()
             flash('Error updating emergency contact.', 'error')
     
@@ -244,7 +269,8 @@ def delete_emergency_contact(id):
         db.session.delete(contact)
         db.session.commit()
         flash('Emergency contact deleted successfully!', 'success')
-    except:
+    except Exception as e:
+        app.logger.error(f'Error deleting emergency contact: {str(e)}')
         db.session.rollback()
         flash('Error deleting emergency contact.', 'error')
     
@@ -278,7 +304,8 @@ def add_vitals():
             db.session.commit()
             flash('Vital signs recorded successfully!', 'success')
             return redirect(url_for('vitals'))
-        except:
+        except Exception as e:
+            app.logger.error(f'Error recording vital signs: {str(e)}')
             db.session.rollback()
             flash('Error recording vital signs.', 'error')
     
