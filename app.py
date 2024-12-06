@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
@@ -60,6 +60,9 @@ class Medication(db.Model):
     time = db.Column(db.String(50), nullable=False)
     notes = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reminder_enabled = db.Column(db.Boolean, default=False)
+    reminder_times = db.Column(db.String(500))  # Store times as JSON string
+    last_reminded = db.Column(db.DateTime)
 
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -324,6 +327,63 @@ def add_vitals():
             flash('Error recording vital signs.', 'error')
     
     return render_template('add_vitals.html', now=datetime.now())
+
+@app.route('/reminders')
+def reminders():
+    medications = Medication.query.all()
+    return render_template('reminders.html', medications=medications)
+
+@app.route('/api/medication/<int:id>/reminders', methods=['GET'])
+def get_medication_reminders(id):
+    medication = Medication.query.get_or_404(id)
+    return {
+        'reminder_enabled': medication.reminder_enabled,
+        'reminder_times': medication.reminder_times or ''
+    }
+
+@app.route('/api/medication/<int:id>/reminders', methods=['POST'])
+def update_medication_reminders(id):
+    medication = Medication.query.get_or_404(id)
+    data = request.get_json()
+    
+    medication.reminder_enabled = data.get('reminder_enabled', False)
+    medication.reminder_times = data.get('reminder_times', '')
+    
+    try:
+        db.session.commit()
+        return {'status': 'success'}
+    except Exception as e:
+        app.logger.error(f'Error updating reminders: {str(e)}')
+        return {'status': 'error'}, 500
+
+@app.route('/api/check_reminders')
+def check_reminders():
+    current_time = datetime.now()
+    current_time_str = current_time.strftime('%H:%M')
+    
+    # Find medications with reminders at the current time
+    medications = Medication.query.filter_by(reminder_enabled=True).all()
+    due_medications = []
+    
+    for med in medications:
+        if not med.reminder_times:
+            continue
+            
+        reminder_times = med.reminder_times.split(',')
+        if current_time_str in reminder_times:
+            # Check if we haven't already reminded for this medication recently
+            if not med.last_reminded or (current_time - med.last_reminded).total_seconds() > 300:  # 5 minutes
+                due_medications.append({
+                    'name': med.name,
+                    'dosage': med.dosage,
+                    'notes': med.notes
+                })
+                med.last_reminded = current_time
+    
+    if due_medications:
+        db.session.commit()
+    
+    return jsonify(due_medications)
 
 # Create tables and initialize database
 def init_db():
