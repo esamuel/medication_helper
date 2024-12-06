@@ -90,28 +90,37 @@ class VitalSigns(db.Model):
 
 @app.route('/')
 def index():
-    # Get user profile
+    # Get the current user's profile
     profile = UserProfile.query.first()
     
-    # Calculate age if DOB exists
+    # Calculate age if date_of_birth is set
     age = None
     if profile and profile.date_of_birth:
         today = datetime.now()
         age = today.year - profile.date_of_birth.year - ((today.month, today.day) < (profile.date_of_birth.month, profile.date_of_birth.day))
     
-    # Get today's medications
-    today = datetime.now().date()
-    medications = Medication.query.all()
-    
     # Get latest vital signs
     latest_vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).first()
     
-    return render_template('index.html', 
+    # Get medications for today
+    medications = Medication.query.all()
+    
+    # Process medication times
+    current_time = datetime.now()
+    for med in medications:
+        if med.reminder_times:
+            # If reminder_times exists, use the first time
+            med.time = med.reminder_times.split(',')[0].strip()
+        else:
+            # Default to morning if no specific time is set
+            med.time = "08:00"
+    
+    return render_template('index.html',
                          profile=profile,
                          age=age,
-                         medications=medications,
                          latest_vitals=latest_vitals,
-                         current_time=datetime.now().time())
+                         medications=medications,
+                         current_time=current_time)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_medication():

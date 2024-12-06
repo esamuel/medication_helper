@@ -102,16 +102,24 @@
                                 <td>{{ medication.dosage }}</td>
                                 <td>{{ medication.time }}</td>
                                 <td>
-                                    {% set med_time = medication.time.split(':') %}
-                                    {% set med_hour = med_time[0]|int %}
-                                    {% set med_minute = med_time[1]|int %}
-                                    {% set current_hour = current_time.hour %}
-                                    {% set current_minute = current_time.minute %}
-                                    
-                                    {% if current_hour > med_hour or (current_hour == med_hour and current_minute >= med_minute) %}
-                                        <span class="badge bg-success">Due Now</span>
+                                    {% if medication.time %}
+                                        {% set med_time = medication.time.split(':') %}
+                                        {% if med_time|length >= 2 %}
+                                            {% set med_hour = med_time[0]|int %}
+                                            {% set med_minute = med_time[1]|int %}
+                                            {% set current_hour = current_time.hour %}
+                                            {% set current_minute = current_time.minute %}
+                                            
+                                            {% if current_hour > med_hour or (current_hour == med_hour and current_minute >= med_minute) %}
+                                                <span class="badge bg-success">Due Now</span>
+                                            {% else %}
+                                                <span class="badge bg-info">Upcoming</span>
+                                            {% endif %}
+                                        {% else %}
+                                            <span class="badge bg-warning">Invalid Time</span>
+                                        {% endif %}
                                     {% else %}
-                                        <span class="badge bg-info">Upcoming</span>
+                                        <span class="badge bg-secondary">No Time Set</span>
                                     {% endif %}
                                 </td>
                                 <td>
