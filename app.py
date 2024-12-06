@@ -6,50 +6,37 @@ from dotenv import load_dotenv
 import sys
 import logging
 
-# Load environment variables from .env file if it exists
+# Load environment variables from .env file
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s %(levelname)s: %(message)s',
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+logger.info('Starting up the Flask application...')
 
+# Initialize Flask app
 app = Flask(__name__)
-app.logger.info('Starting up the Flask application...')
 
-# Use environment variables for configuration
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
-if not app.config['SECRET_KEY']:
-    app.logger.error('No SECRET_KEY set in environment variables!')
-    raise ValueError('No SECRET_KEY set in environment variables!')
-
-# Set the environment
-FLASK_ENV = os.environ.get('FLASK_ENV', 'production')
-app.config['DEBUG'] = FLASK_ENV == 'development'
-
-app.logger.info(f'Running in {FLASK_ENV} environment')
-
-# Database configuration - use PostgreSQL in production, SQLite in development
-DATABASE_URL = os.environ.get('DATABASE_URL')
-if DATABASE_URL:
-    if DATABASE_URL.startswith('postgres://'):
-        # Heroku/Render provides DATABASE_URL starting with 'postgres://' but SQLAlchemy needs 'postgresql://'
-        DATABASE_URL = DATABASE_URL.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
-    app.logger.info('Using PostgreSQL database')
+# Configure SQLAlchemy
+if os.environ.get('DATABASE_URL'):
+    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://')
 else:
     app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medications.db'
-    app.logger.info('Using SQLite database')
+
+# Set secret key - use environment variable if available, otherwise use a default for development
+if os.environ.get('SECRET_KEY'):
+    app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+else:
+    logger.warning('No SECRET_KEY in environment, using development key. DO NOT use in production!')
+    app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
 
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 try:
     db = SQLAlchemy(app)
-    app.logger.info('SQLAlchemy initialized successfully')
+    logger.info('SQLAlchemy initialized successfully')
 except Exception as e:
-    app.logger.error(f'Error initializing SQLAlchemy: {str(e)}')
+    logger.error(f'Error initializing SQLAlchemy: {str(e)}')
     raise
 
 class Medication(db.Model):
@@ -149,7 +136,7 @@ def add_medication():
             flash('Medication added successfully!', 'success')
             return redirect(url_for('index'))
         except Exception as e:
-            app.logger.error(f'Error adding medication: {str(e)}')
+            logger.error(f'Error adding medication: {str(e)}')
             flash('There was an error adding your medication.', 'error')
             return redirect(url_for('add_medication'))
 
@@ -171,7 +158,7 @@ def edit_medication(id):
             flash('Medication updated successfully!', 'success')
             return redirect(url_for('index'))
         except Exception as e:
-            app.logger.error(f'Error updating medication: {str(e)}')
+            logger.error(f'Error updating medication: {str(e)}')
             flash('There was an error updating your medication.', 'error')
             return redirect(url_for('edit_medication', id=id))
 
@@ -186,7 +173,7 @@ def delete_medication(id):
         db.session.commit()
         flash('Medication deleted successfully!', 'success')
     except Exception as e:
-        app.logger.error(f'Error deleting medication: {str(e)}')
+        logger.error(f'Error deleting medication: {str(e)}')
         flash('There was an error deleting your medication.', 'error')
     
     return redirect(url_for('index'))
@@ -218,7 +205,7 @@ def profile():
             db.session.commit()
             flash('Profile updated successfully!', 'success')
         except Exception as e:
-            app.logger.error(f'Error updating profile: {str(e)}')
+            logger.error(f'Error updating profile: {str(e)}')
             db.session.rollback()
             flash('Error updating profile.', 'error')
 
@@ -248,7 +235,7 @@ def add_emergency_contact():
             flash('Emergency contact added successfully!', 'success')
             return redirect(url_for('emergency_contacts'))
         except Exception as e:
-            app.logger.error(f'Error adding emergency contact: {str(e)}')
+            logger.error(f'Error adding emergency contact: {str(e)}')
             db.session.rollback()
             flash('Error adding emergency contact.', 'error')
     
@@ -272,7 +259,7 @@ def edit_emergency_contact(id):
             flash('Emergency contact updated successfully!', 'success')
             return redirect(url_for('emergency_contacts'))
         except Exception as e:
-            app.logger.error(f'Error updating emergency contact: {str(e)}')
+            logger.error(f'Error updating emergency contact: {str(e)}')
             db.session.rollback()
             flash('Error updating emergency contact.', 'error')
     
@@ -287,7 +274,7 @@ def delete_emergency_contact(id):
         db.session.commit()
         flash('Emergency contact deleted successfully!', 'success')
     except Exception as e:
-        app.logger.error(f'Error deleting emergency contact: {str(e)}')
+        logger.error(f'Error deleting emergency contact: {str(e)}')
         db.session.rollback()
         flash('Error deleting emergency contact.', 'error')
     
@@ -322,7 +309,7 @@ def add_vitals():
             flash('Vital signs recorded successfully!', 'success')
             return redirect(url_for('vitals'))
         except Exception as e:
-            app.logger.error(f'Error recording vital signs: {str(e)}')
+            logger.error(f'Error recording vital signs: {str(e)}')
             db.session.rollback()
             flash('Error recording vital signs.', 'error')
     
@@ -353,7 +340,7 @@ def update_medication_reminders(id):
         db.session.commit()
         return {'status': 'success'}
     except Exception as e:
-        app.logger.error(f'Error updating reminders: {str(e)}')
+        logger.error(f'Error updating reminders: {str(e)}')
         return {'status': 'error'}, 500
 
 @app.route('/api/check_reminders')
@@ -391,14 +378,14 @@ def init_db():
         try:
             # Create any missing tables first
             db.create_all()
-            app.logger.info("Database tables verified/created successfully")
+            logger.info("Database tables verified/created successfully")
             
             # Check if we need to add new columns to the Medication table
             inspector = db.inspect(db.engine)
             existing_columns = [c['name'] for c in inspector.get_columns('medication')]
             
             if 'reminder_enabled' not in existing_columns:
-                app.logger.info("Adding reminder columns to Medication table")
+                logger.info("Adding reminder columns to Medication table")
                 # Use PostgreSQL-specific syntax when using PostgreSQL
                 if 'postgresql' in str(db.engine.url):
                     with db.engine.connect() as conn:
@@ -420,14 +407,14 @@ def init_db():
                             conn.execute(db.text("ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"))
                             conn.commit()
                         except Exception as e:
-                            app.logger.warning(f"Column might already exist: {str(e)}")
+                            logger.warning(f"Column might already exist: {str(e)}")
                             conn.rollback()
                 
-                app.logger.info("Successfully added reminder columns")
+                logger.info("Successfully added reminder columns")
             
             # Add sample data if the database is empty
             if not Medication.query.first():
-                app.logger.info("Adding sample medications")
+                logger.info("Adding sample medications")
                 sample_medications = [
                     Medication(
                         name="Aspirin",
@@ -462,14 +449,14 @@ def init_db():
                 
                 try:
                     db.session.commit()
-                    app.logger.info(f"Added {len(sample_medications)} sample medications")
+                    logger.info(f"Added {len(sample_medications)} sample medications")
                 except Exception as e:
-                    app.logger.error(f"Error adding medications: {str(e)}")
+                    logger.error(f"Error adding medications: {str(e)}")
                     db.session.rollback()
 
             # Add sample vital signs if none exist
             if not VitalSigns.query.first():
-                app.logger.info("Adding sample vital signs")
+                logger.info("Adding sample vital signs")
                 # Create two weeks of test data
                 test_data = []
                 current_time = datetime.now()
@@ -510,9 +497,9 @@ def init_db():
                 
                 try:
                     db.session.commit()
-                    app.logger.info(f"Added {len(test_data)} sample vital signs readings")
+                    logger.info(f"Added {len(test_data)} sample vital signs readings")
                 except Exception as e:
-                    app.logger.error(f"Error adding vital signs: {str(e)}")
+                    logger.error(f"Error adding vital signs: {str(e)}")
                     db.session.rollback()
             
             # Check if we need to create a default user profile
@@ -530,13 +517,13 @@ def init_db():
                 db.session.add(default_profile)
                 try:
                     db.session.commit()
-                    app.logger.info("Created default user profile")
+                    logger.info("Created default user profile")
                 except Exception as e:
-                    app.logger.error(f"Error creating user profile: {str(e)}")
+                    logger.error(f"Error creating user profile: {str(e)}")
                     db.session.rollback()
 
         except Exception as e:
-            app.logger.error(f"Error initializing database: {str(e)}")
+            logger.error(f"Error initializing database: {str(e)}")
             db.session.rollback()
             raise
 
