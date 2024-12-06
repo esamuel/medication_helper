@@ -381,6 +381,25 @@ def check_reminders():
     
     return jsonify(due_medications)
 
+@app.route('/reset_data', methods=['POST'])
+def reset_data():
+    try:
+        # Delete all records from each table
+        EmergencyContact.query.delete()
+        VitalSigns.query.delete()
+        Medication.query.delete()
+        UserProfile.query.delete()
+        
+        # Commit the changes
+        db.session.commit()
+        flash('All data has been successfully reset!', 'success')
+    except Exception as e:
+        logger.error(f"Error resetting data: {str(e)}")
+        db.session.rollback()
+        flash('There was an error resetting the data.', 'error')
+    
+    return redirect(url_for('index'))
+
 # Create tables and initialize database
 def init_db():
     with app.app_context():

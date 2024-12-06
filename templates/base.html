@@ -36,7 +36,9 @@
                         <a class="nav-link" href="{{ url_for('profile') }}">My Profile</a>
                     </li>
                     <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('emergency_contacts') }}">Emergency Contacts</a>
+                        <a class="nav-link" href="{{ url_for('emergency_contacts') }}">
+                            <i class="bi bi-person-lines-fill"></i> Emergency Contacts
+                        </a>
                     </li>
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('vitals') }}">
@@ -49,6 +51,12 @@
                         </a>
                     </li>
                 </ul>
+                <!-- Reset Data Button -->
+                <form action="{{ url_for('reset_data') }}" method="POST" class="d-flex" onsubmit="return confirm('Are you sure you want to reset all data? This cannot be undone!');">
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash"></i> Reset All Data
+                    </button>
+                </form>
             </div>
         </div>
     </nav>
