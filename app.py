@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta
 import os
@@ -675,21 +675,49 @@ def check_reminders():
 @app.route('/reset_data', methods=['POST'])
 def reset_data():
     try:
-        # Delete all records from each table
-        EmergencyContact.query.delete()
-        VitalSigns.query.delete()
-        Medication.query.delete()
-        UserProfile.query.delete()
-        
-        # Commit the changes
-        db.session.commit()
-        flash('All data has been successfully reset!', 'success')
+        # Drop all tables
+        db.drop_all()
+        # Recreate all tables
+        db.create_all()
+        flash('All data has been reset successfully!', 'success')
     except Exception as e:
         logger.error(f"Error resetting data: {str(e)}")
-        db.session.rollback()
-        flash('There was an error resetting the data.', 'error')
+        flash('Error resetting data', 'error')
     
     return redirect(url_for('index'))
+
+@app.route('/settings', methods=['GET', 'POST'])
+def settings():
+    if request.method == 'POST':
+        action = request.form.get('action')
+        
+        if action == 'toggle_theme':
+            # Toggle theme in session
+            current_theme = session.get('theme', 'light')
+            session['theme'] = 'dark' if current_theme == 'light' else 'light'
+            return jsonify({'theme': session['theme']})
+            
+        elif action == 'reset_data':
+            try:
+                # Drop all tables
+                db.drop_all()
+                # Recreate all tables
+                db.create_all()
+                flash('All data has been reset successfully!', 'success')
+            except Exception as e:
+                logger.error(f"Error resetting data: {str(e)}")
+                flash('Error resetting data', 'error')
+                
+            return redirect(url_for('settings'))
+    
+    # Get current theme
+    theme = session.get('theme', 'light')
+    return render_template('settings.html', theme=theme)
+
+@app.context_processor
+def inject_theme():
+    """Make theme available to all templates"""
+    return {'theme': session.get('theme', 'light')}
 
 if __name__ == '__main__':
     app.run(debug=True)
