@@ -27,9 +27,31 @@
             background-color: #343a40;
             border-color: #495057;
         }
+        [data-bs-theme="dark"] .table {
+            --bs-table-bg: #343a40;
+            --bs-table-color: #f8f9fa;
+            --bs-table-border-color: #495057;
+        }
+        [data-bs-theme="dark"] .modal-content {
+            background-color: #343a40;
+            border-color: #495057;
+        }
+        [data-bs-theme="dark"] .form-control {
+            background-color: #2b3035;
+            border-color: #495057;
+            color: #f8f9fa;
+        }
+        [data-bs-theme="dark"] .form-control:focus {
+            background-color: #2b3035;
+            color: #f8f9fa;
+        }
+        [data-bs-theme="light"] {
+            --bs-body-bg: #f8f9fa;
+            --bs-body-color: #212529;
+        }
     </style>
 </head>
-<body class="bg-light">
+<body>
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary mb-4">
         <div class="container">
             <a class="navbar-brand" href="{{ url_for('index') }}">Medication Helper</a>
