@@ -60,13 +60,7 @@ try:
             'max_overflow': 0,
             'connect_args': {
                 'connect_timeout': 10,
-                'options': '-c timezone=UTC -c client_encoding=UTF8',
-                'server_settings': {
-                    'jit': 'off',  # Disable JIT for compatibility
-                    'timezone': 'UTC',
-                    'client_encoding': 'UTF8',
-                    'application_name': 'medication_helper'
-                }
+                'options': '-c timezone=UTC -c client_encoding=UTF8 -c jit=off'
             }
         }
         
@@ -94,11 +88,6 @@ try:
             version = cur.fetchone()[0]
             logger.info(f"Connected to PostgreSQL version: {version}")
             
-            # Set session parameters
-            cur.execute("SET jit TO off")
-            cur.execute("SET timezone TO 'UTC'")
-            cur.execute("SET client_encoding TO 'UTF8'")
-            
             cur.close()
             conn.close()
             logger.info("Direct connection test successful")
@@ -115,38 +104,24 @@ try:
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
         logger.info(f'Using SQLite database at {db_path} (local development)')
 
-    # Initialize SQLAlchemy with minimal retries
-    max_retries = 2
-    retry_delay = 1
-    last_exception = None
+    # Initialize SQLAlchemy
+    db = SQLAlchemy(app)
     
-    for attempt in range(max_retries):
-        try:
-            if attempt > 0:
-                logger.info(f'SQLAlchemy initialization attempt {attempt + 1}')
-            
-            db = SQLAlchemy(app)
-            
-            with app.app_context():
-                # Test connection with version check
+    # Test database connection once
+    try:
+        with app.app_context():
+            # Test connection with version check
+            if 'postgresql' in str(db.engine.url):
                 result = db.session.execute(db.text('SHOW server_version')).scalar()
-                logger.info(f'SQLAlchemy connected to PostgreSQL version: {result}')
-                db.session.commit()
-                logger.info('SQLAlchemy initialization successful')
-                break
-                
-        except Exception as e:
-            last_exception = e
-            logger.error(f'SQLAlchemy initialization attempt {attempt + 1} failed: {str(e)}')
-            if attempt < max_retries - 1:
-                time.sleep(retry_delay)
-                continue
-            else:
-                raise last_exception
-            
-except Exception as e:
-    logger.error(f'Fatal database initialization error: {str(e)}')
-    raise
+                logger.info(f'Connected to PostgreSQL version: {result}')
+            db.session.commit()
+            logger.info('Database connection successful')
+    except Exception as e:
+        logger.error(f'Database connection test failed: {str(e)}')
+        raise
+
+    # Initialize database when the app starts, but NEVER add sample data
+    init_db(add_sample_data=False)
 
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -293,9 +268,6 @@ def init_db(add_sample_data=False):
             logger.error(f"Error in init_db: {str(e)}")
             db.session.rollback()
             raise
-
-# Initialize database when the app starts, but NEVER add sample data
-init_db(add_sample_data=False)
 
 @app.route('/')
 def index():
