@@ -120,8 +120,12 @@ try:
         logger.error(f'Database connection test failed: {str(e)}')
         raise
 
-    # Initialize database when the app starts, but NEVER add sample data
-    init_db(add_sample_data=False)
+except Exception as e:
+    logger.error(f'Fatal database initialization error: {str(e)}')
+    raise
+
+# Initialize database when the app starts, but NEVER add sample data
+init_db(add_sample_data=False)
 
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
