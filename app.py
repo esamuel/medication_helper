@@ -17,52 +17,107 @@ logger.info('Starting up the Flask application...')
 # Initialize Flask app
 app = Flask(__name__)
 
-# Configure SQLAlchemy
-if os.environ.get('DATABASE_URL'):
-    app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL').replace('postgres://', 'postgresql://')
-else:
-    app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///medications.db'
+@app.template_filter('format_age')
+def format_age(dob):
+    if not dob:
+        return ""
+    today = datetime.now()
+    years = today.year - dob.year
+    months = today.month - dob.month
+    
+    if today.day < dob.day:
+        months -= 1
+    
+    if months < 0:
+        years -= 1
+        months += 12
+        
+    return f"{years} years, {months} months"
 
 # Set secret key - use environment variable if available, otherwise use a default for development
 if os.environ.get('SECRET_KEY'):
     app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY')
+    logger.info('Using production secret key from environment')
 else:
     logger.warning('No SECRET_KEY in environment, using development key. DO NOT use in production!')
     app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
 
+# Configure SQLAlchemy
+if os.environ.get('DATABASE_URL'):
+    # Handle Render's database URL format
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url.startswith('postgres://'):
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    logger.info('Using PostgreSQL database on Render')
+    
+    # Configure PostgreSQL connection pool for web deployment
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_size': 5,  # Maximum number of permanent connections
+        'max_overflow': 2,  # Maximum number of temporary connections
+        'pool_timeout': 30,  # Seconds to wait before giving up on getting a connection
+        'pool_recycle': 1800,  # Recycle connections after 30 minutes
+    }
+    logger.info('Configured PostgreSQL connection pool')
+else:
+    # Local SQLite database - store in a persistent location
+    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'medications.db')
+    # Create the data directory if it doesn't exist
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+    logger.info(f'Using SQLite database at {db_path} (local development)')
+
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
+# Initialize SQLAlchemy with enhanced error handling
 try:
     db = SQLAlchemy(app)
     logger.info('SQLAlchemy initialized successfully')
+    
+    # Test database connection
+    with app.app_context():
+        db.engine.connect()
+        logger.info('Successfully connected to the database')
 except Exception as e:
-    logger.error(f'Error initializing SQLAlchemy: {str(e)}')
+    logger.error(f'Error initializing database: {str(e)}')
     raise
-
-class Medication(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(100), nullable=False)
-    dosage = db.Column(db.String(50), nullable=False)
-    frequency = db.Column(db.String(100), nullable=False)
-    time = db.Column(db.String(50), nullable=False)
-    notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    reminder_enabled = db.Column(db.Boolean, default=False)
-    reminder_times = db.Column(db.String(500))  # Store times as JSON string
-    last_reminded = db.Column(db.DateTime)
 
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
     date_of_birth = db.Column(db.DateTime)
     gender = db.Column(db.String(20))
-    weight = db.Column(db.Float)
-    height = db.Column(db.Float)
+    height = db.Column(db.Float)  # in cm
+    weight = db.Column(db.Float)  # in kg
     blood_type = db.Column(db.String(10))
     allergies = db.Column(db.Text)
     medical_conditions = db.Column(db.Text)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+class Medication(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(100), nullable=False)
+    dosage = db.Column(db.String(50))
+    frequency = db.Column(db.String(100))
+    time = db.Column(db.String(50))
+    notes = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reminder_enabled = db.Column(db.Boolean, default=False)
+    reminder_times = db.Column(db.String(500))  # Store times as JSON string
+    last_reminded = db.Column(db.DateTime)
+
+class VitalSigns(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    systolic_bp = db.Column(db.Integer)  # mmHg
+    diastolic_bp = db.Column(db.Integer)  # mmHg
+    heart_rate = db.Column(db.Integer)  # bpm
+    temperature = db.Column(db.Float)  # Celsius
+    respiratory_rate = db.Column(db.Integer)  # breaths per minute
+    oxygen_saturation = db.Column(db.Integer)  # percentage
+    blood_sugar = db.Column(db.Float)  # mmol/L
+    notes = db.Column(db.Text)
 
 class EmergencyContact(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -76,51 +131,68 @@ class EmergencyContact(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-class VitalSigns(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    date_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
-    systolic_bp = db.Column(db.Integer)  # Systolic blood pressure
-    diastolic_bp = db.Column(db.Integer)  # Diastolic blood pressure
-    heart_rate = db.Column(db.Integer)    # Heart rate (bpm)
-    temperature = db.Column(db.Float)      # Body temperature (°C)
-    respiratory_rate = db.Column(db.Integer)  # Breaths per minute
-    oxygen_saturation = db.Column(db.Integer) # SpO2 (%)
-    blood_sugar = db.Column(db.Float)      # Blood glucose level
-    notes = db.Column(db.Text)            # Any additional notes
+def init_db(add_sample_data=False):
+    with app.app_context():
+        try:
+            # Check if database file exists and has data
+            if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
+                logger.info("Database file exists and has data, skipping initialization")
+                return
+            
+            # Only create tables if they don't exist
+            inspector = db.inspect(db.engine)
+            tables = inspector.get_table_names()
+            if not tables:
+                # Create tables only if database is empty
+                db.create_all()
+                logger.info("Database tables created successfully")
+            else:
+                logger.info("Database tables already exist, skipping creation")
+            
+            # Check if we need to add new columns to the Medication table
+            if 'medication' in tables:
+                existing_columns = [c['name'] for c in inspector.get_columns('medication')]
+                
+                if 'reminder_enabled' not in existing_columns:
+                    logger.info("Adding reminder columns to Medication table")
+                    # Use PostgreSQL-specific syntax when using PostgreSQL
+                    if 'postgresql' in str(db.engine.url):
+                        with db.engine.connect() as conn:
+                            conn.execute(db.text(
+                                """
+                                ALTER TABLE medication 
+                                ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN DEFAULT FALSE,
+                                ADD COLUMN IF NOT EXISTS reminder_times VARCHAR(500),
+                                ADD COLUMN IF NOT EXISTS last_reminded TIMESTAMP;
+                                """
+                            ))
+                            conn.commit()
+                    else:
+                        # SQLite syntax for local development
+                        with db.engine.connect() as conn:
+                            try:
+                                conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT FALSE;"))
+                                conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500);"))
+                                conn.execute(db.text("ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"))
+                                conn.commit()
+                            except Exception as e:
+                                logger.warning(f"Column might already exist: {str(e)}")
+                                conn.rollback()
+                    
+                    logger.info("Successfully added reminder columns")
+
+        except Exception as e:
+            logger.error(f"Error initializing database: {str(e)}")
+            db.session.rollback()
+            raise
+
+# Initialize database when the app starts, but NEVER add sample data
+init_db(add_sample_data=False)
 
 @app.route('/')
 def index():
     # Get the current user's profile
     profile = UserProfile.query.first()
-    
-    # Calculate age if date_of_birth is set
-    age = None
-    age_str = None
-    if profile and profile.date_of_birth:
-        today = datetime.now()
-        birth_date = profile.date_of_birth
-        
-        # Calculate years and months
-        years = today.year - birth_date.year
-        months = today.month - birth_date.month
-        
-        # Adjust if we haven't reached the birth day in current month
-        if today.day < birth_date.day:
-            months -= 1
-        
-        # Adjust years if months are negative
-        if months < 0:
-            years -= 1
-            months += 12
-        
-        # Format the age string
-        if months == 0:
-            age_str = f"{years} years"
-        else:
-            # Calculate decimal years for sorting/comparison
-            age = years + (months / 12)
-            # Format with one decimal place
-            age_str = f"{years} years, {months} months ({age:.1f} years)"
     
     # Get latest vital signs
     latest_vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).first()
@@ -140,11 +212,8 @@ def index():
     
     return render_template('index.html',
                          profile=profile,
-                         age=age,
-                         age_str=age_str,
                          latest_vitals=latest_vitals,
-                         medications=medications,
-                         current_time=current_time)
+                         medications=medications)
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_medication():
@@ -227,8 +296,15 @@ def profile():
     if request.method == 'POST':
         profile.name = request.form['name']
         profile.date_of_birth = datetime.strptime(request.form['date_of_birth'], '%Y-%m-%d')
-        profile.weight = float(request.form['weight'])
-        profile.height = float(request.form['height'])
+        
+        # Handle weight - convert empty string to None
+        weight = request.form['weight']
+        profile.weight = float(weight) if weight.strip() else None
+        
+        # Handle height - convert empty string to None
+        height = request.form['height']
+        profile.height = float(height) if height.strip() else None
+        
         profile.gender = request.form['gender']
         profile.blood_type = request.form['blood_type']
         profile.allergies = request.form['allergies']
@@ -424,165 +500,8 @@ def reset_data():
     
     return redirect(url_for('index'))
 
-# Create tables and initialize database
-def init_db(add_sample_data=False):
-    with app.app_context():
-        try:
-            # Create any missing tables first
-            db.create_all()
-            logger.info("Database tables verified/created successfully")
-            
-            # Check if we need to add new columns to the Medication table
-            inspector = db.inspect(db.engine)
-            existing_columns = [c['name'] for c in inspector.get_columns('medication')]
-            
-            if 'reminder_enabled' not in existing_columns:
-                logger.info("Adding reminder columns to Medication table")
-                # Use PostgreSQL-specific syntax when using PostgreSQL
-                if 'postgresql' in str(db.engine.url):
-                    with db.engine.connect() as conn:
-                        conn.execute(db.text(
-                            """
-                            ALTER TABLE medication 
-                            ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN DEFAULT FALSE,
-                            ADD COLUMN IF NOT EXISTS reminder_times VARCHAR(500),
-                            ADD COLUMN IF NOT EXISTS last_reminded TIMESTAMP;
-                            """
-                        ))
-                        conn.commit()
-                else:
-                    # SQLite syntax for local development
-                    with db.engine.connect() as conn:
-                        try:
-                            conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT FALSE;"))
-                            conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500);"))
-                            conn.execute(db.text("ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"))
-                            conn.commit()
-                        except Exception as e:
-                            logger.warning(f"Column might already exist: {str(e)}")
-                            conn.rollback()
-                
-                logger.info("Successfully added reminder columns")
-            
-            # Only add sample data if explicitly requested
-            if add_sample_data:
-                if not Medication.query.first():
-                    logger.info("Adding sample medications")
-                    sample_medications = [
-                        Medication(
-                            name="Aspirin",
-                            dosage="81mg",
-                            frequency="Once daily",
-                            time="Morning",
-                            notes="Take with food",
-                            reminder_enabled=True,
-                            reminder_times="08:00"
-                        ),
-                        Medication(
-                            name="Vitamin D",
-                            dosage="2000 IU",
-                            frequency="Once daily",
-                            time="Morning",
-                            notes="Take with breakfast",
-                            reminder_enabled=True,
-                            reminder_times="09:00"
-                        ),
-                        Medication(
-                            name="Metformin",
-                            dosage="500mg",
-                            frequency="Twice daily",
-                            time="Morning and Evening",
-                            notes="Take with meals",
-                            reminder_enabled=True,
-                            reminder_times="08:00,20:00"
-                        )
-                    ]
-                    for med in sample_medications:
-                        db.session.add(med)
-                    
-                    try:
-                        db.session.commit()
-                        logger.info(f"Added {len(sample_medications)} sample medications")
-                    except Exception as e:
-                        logger.error(f"Error adding medications: {str(e)}")
-                        db.session.rollback()
-
-                if not VitalSigns.query.first():
-                    logger.info("Adding sample vital signs")
-                    # Create two weeks of test data
-                    test_data = []
-                    current_time = datetime.now()
-                    for day in range(14):  # 14 days
-                        base_date = current_time - timedelta(days=14-day)
-                        # Morning reading
-                        test_data.append(
-                            VitalSigns(
-                                date_time=base_date.replace(hour=8, minute=0),  # 8 AM
-                                systolic_bp=120 + (day % 5) - 2,  # Varying between 118-123
-                                diastolic_bp=80 + (day % 3) - 1,  # Varying between 79-82
-                                heart_rate=70 + (day % 6) - 2,    # Varying between 68-74
-                                temperature=36.5 + (day % 4) * 0.1,  # Varying between 36.5-36.8
-                                respiratory_rate=14 + (day % 3),   # Varying between 14-16
-                                oxygen_saturation=97 + (day % 3),  # Varying between 97-99
-                                blood_sugar=5.0 + (day % 6) * 0.1,  # Varying between 5.0-5.5
-                                notes="Morning reading"
-                            )
-                        )
-                        
-                        # Evening reading
-                        test_data.append(
-                            VitalSigns(
-                                date_time=base_date.replace(hour=20, minute=0),  # 8 PM
-                                systolic_bp=118 + (day % 4) - 1,  # Slightly different variation
-                                diastolic_bp=78 + (day % 3) - 1,
-                                heart_rate=72 + (day % 5) - 2,    # Usually higher in evening
-                                temperature=36.7 + (day % 3) * 0.1,
-                                respiratory_rate=15 + (day % 2),
-                                oxygen_saturation=98 + (day % 2),
-                                blood_sugar=5.2 + (day % 5) * 0.1,
-                                notes="Evening reading"
-                            )
-                        )
-                    
-                    for vital in test_data:
-                        db.session.add(vital)
-                    
-                    try:
-                        db.session.commit()
-                        logger.info(f"Added {len(test_data)} sample vital signs readings")
-                    except Exception as e:
-                        logger.error(f"Error adding vital signs: {str(e)}")
-                        db.session.rollback()
-                
-                if not UserProfile.query.first():
-                    default_profile = UserProfile(
-                        name="Default User",
-                        date_of_birth=datetime.now() - timedelta(days=365*30),  # 30 years old
-                        gender="Not Specified",
-                        weight=70.0,  # kg
-                        height=170.0,  # cm
-                        blood_type="Not Specified",
-                        allergies="None",
-                        medical_conditions="None"
-                    )
-                    db.session.add(default_profile)
-                    try:
-                        db.session.commit()
-                        logger.info("Created default user profile")
-                    except Exception as e:
-                        logger.error(f"Error creating user profile: {str(e)}")
-                        db.session.rollback()
-
-        except Exception as e:
-            logger.error(f"Error initializing database: {str(e)}")
-            db.session.rollback()
-            raise
-
-# Initialize database when the app starts
-init_db(add_sample_data=False)  # Don't add sample data by default
-
 if __name__ == '__main__':
     app.run(debug=True)
 else:
-    # Initialize database when running under Gunicorn
-    init_db(add_sample_data=False)  # Don't add sample data by default
+    # Initialize database when running under Gunicorn, but NEVER add sample data
+    init_db(add_sample_data=False)
