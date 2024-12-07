@@ -43,34 +43,34 @@ else:
     app.config['SECRET_KEY'] = 'dev-secret-key-change-in-production'
 
 # Configure SQLAlchemy
-if os.environ.get('DATABASE_URL'):
-    # Handle Render's database URL format
-    database_url = os.environ.get('DATABASE_URL')
-    if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql://', 1)
-    app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-    logger.info('Using PostgreSQL database on Render')
-    
-    # Configure PostgreSQL connection pool for web deployment
-    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-        'pool_size': 5,  # Maximum number of permanent connections
-        'max_overflow': 2,  # Maximum number of temporary connections
-        'pool_timeout': 30,  # Seconds to wait before giving up on getting a connection
-        'pool_recycle': 1800,  # Recycle connections after 30 minutes
-    }
-    logger.info('Configured PostgreSQL connection pool')
-else:
-    # Local SQLite database - store in a persistent location
-    db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'medications.db')
-    # Create the data directory if it doesn't exist
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-    logger.info(f'Using SQLite database at {db_path} (local development)')
-
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-
-# Initialize SQLAlchemy with enhanced error handling
 try:
+    if os.environ.get('DATABASE_URL'):
+        # Handle Render's database URL format
+        database_url = os.environ.get('DATABASE_URL')
+        if database_url.startswith('postgres://'):
+            database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        logger.info('Using PostgreSQL database on Render')
+        
+        # Configure PostgreSQL connection pool for web deployment
+        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+            'pool_size': 5,  # Maximum number of permanent connections
+            'max_overflow': 2,  # Maximum number of temporary connections
+            'pool_timeout': 30,  # Seconds to wait before giving up on getting a connection
+            'pool_recycle': 1800,  # Recycle connections after 30 minutes
+        }
+        logger.info('Configured PostgreSQL connection pool')
+    else:
+        # Local SQLite database - store in a persistent location
+        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'medications.db')
+        # Create the data directory if it doesn't exist
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
+        logger.info(f'Using SQLite database at {db_path} (local development)')
+
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
+    # Initialize SQLAlchemy
     db = SQLAlchemy(app)
     logger.info('SQLAlchemy initialized successfully')
     
