@@ -110,6 +110,10 @@ try:
     # Test database connection once
     try:
         with app.app_context():
+            # Create all tables
+            db.create_all()
+            logger.info("Database tables created successfully")
+
             # Test connection with version check
             if 'postgresql' in str(db.engine.url):
                 result = db.session.execute(db.text('SHOW server_version')).scalar()
@@ -531,11 +535,13 @@ def delete_emergency_contact(id):
 
 @app.route('/vitals', methods=['GET'])
 def vitals():
-    vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).all()
-    print("Number of vital signs:", len(vitals))
-    if len(vitals) > 0:
-        print("First vital sign:", vitals[0].systolic_bp, "/", vitals[0].diastolic_bp)
-    return render_template('vitals.html', vitals=vitals)
+    try:
+        vitals_list = VitalSigns.query.order_by(VitalSigns.date_time.desc()).all()
+        return render_template('vitals.html', vitals=vitals_list)
+    except Exception as e:
+        logger.error(f"Error fetching vital signs: {str(e)}")
+        flash('Error loading vital signs', 'error')
+        return render_template('vitals.html', vitals=[])
 
 @app.route('/vitals/add', methods=['GET', 'POST'])
 def add_vitals():
@@ -563,6 +569,51 @@ def add_vitals():
             flash('Error recording vital signs.', 'error')
     
     return render_template('add_vitals.html', now=datetime.now())
+
+@app.route('/edit_vitals/<int:id>', methods=['GET', 'POST'])
+def edit_vitals(id):
+    try:
+        vital = VitalSigns.query.get_or_404(id)
+        
+        if request.method == 'POST':
+            vital.systolic_bp = request.form.get('systolic_bp', type=int)
+            vital.diastolic_bp = request.form.get('diastolic_bp', type=int)
+            vital.heart_rate = request.form.get('heart_rate', type=int)
+            vital.temperature = request.form.get('temperature', type=float)
+            vital.respiratory_rate = request.form.get('respiratory_rate', type=int)
+            vital.oxygen_saturation = request.form.get('oxygen_saturation', type=int)
+            vital.blood_sugar = request.form.get('blood_sugar', type=float)
+            vital.notes = request.form.get('notes')
+            
+            try:
+                db.session.commit()
+                flash('Vital signs updated successfully!', 'success')
+                return redirect(url_for('vitals'))
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error updating vital signs: {str(e)}")
+                flash('Error updating vital signs', 'error')
+                
+        return render_template('edit_vitals.html', vital=vital)
+        
+    except Exception as e:
+        logger.error(f"Error in edit_vitals: {str(e)}")
+        flash('Error accessing vital signs', 'error')
+        return redirect(url_for('vitals'))
+
+@app.route('/delete_vitals/<int:id>')
+def delete_vitals(id):
+    try:
+        vital = VitalSigns.query.get_or_404(id)
+        db.session.delete(vital)
+        db.session.commit()
+        flash('Vital signs deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting vital signs: {str(e)}")
+        flash('Error deleting vital signs', 'error')
+    
+    return redirect(url_for('vitals'))
 
 @app.route('/reminders')
 def reminders():
