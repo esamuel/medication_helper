@@ -5,6 +5,7 @@ import os
 from dotenv import load_dotenv
 import sys
 import logging
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -49,17 +50,63 @@ try:
         database_url = os.environ.get('DATABASE_URL')
         if database_url.startswith('postgres://'):
             database_url = database_url.replace('postgres://', 'postgresql://', 1)
+            
+        # Set up basic configuration with PostgreSQL 16 specific settings
         app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        logger.info('Using PostgreSQL database on Render')
-        
-        # Configure PostgreSQL connection pool for web deployment
+        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            'pool_size': 5,  # Maximum number of permanent connections
-            'max_overflow': 2,  # Maximum number of temporary connections
-            'pool_timeout': 30,  # Seconds to wait before giving up on getting a connection
-            'pool_recycle': 1800,  # Recycle connections after 30 minutes
+            'pool_pre_ping': True,
+            'pool_size': 1,
+            'max_overflow': 0,
+            'connect_args': {
+                'connect_timeout': 10,
+                'options': '-c timezone=UTC -c client_encoding=UTF8',
+                'server_settings': {
+                    'jit': 'off',  # Disable JIT for compatibility
+                    'timezone': 'UTC',
+                    'client_encoding': 'UTF8',
+                    'application_name': 'medication_helper'
+                }
+            }
         }
-        logger.info('Configured PostgreSQL connection pool')
+        
+        # Import and configure psycopg2 directly
+        import psycopg2
+        from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, parse_dsn
+        
+        # Parse the URL to get connection parameters
+        dsn = parse_dsn(database_url)
+        
+        # Test direct connection first with PostgreSQL 16 specific settings
+        try:
+            logger.info("Testing direct psycopg2 connection...")
+            conn = psycopg2.connect(
+                **dsn,
+                sslmode='require',
+                connect_timeout=10,
+                options="-c timezone=UTC -c client_encoding=UTF8 -c jit=off"
+            )
+            conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
+            
+            # Test connection and get PostgreSQL version
+            cur = conn.cursor()
+            cur.execute('SHOW server_version')
+            version = cur.fetchone()[0]
+            logger.info(f"Connected to PostgreSQL version: {version}")
+            
+            # Set session parameters
+            cur.execute("SET jit TO off")
+            cur.execute("SET timezone TO 'UTC'")
+            cur.execute("SET client_encoding TO 'UTF8'")
+            
+            cur.close()
+            conn.close()
+            logger.info("Direct connection test successful")
+        except Exception as e:
+            logger.error(f"Direct connection test failed: {str(e)}")
+            raise
+            
+        logger.info('Using PostgreSQL 16 database on Render')
     else:
         # Local SQLite database - store in a persistent location
         db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'medications.db')
@@ -68,18 +115,37 @@ try:
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
         logger.info(f'Using SQLite database at {db_path} (local development)')
 
-    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    # Initialize SQLAlchemy with minimal retries
+    max_retries = 2
+    retry_delay = 1
+    last_exception = None
     
-    # Initialize SQLAlchemy
-    db = SQLAlchemy(app)
-    logger.info('SQLAlchemy initialized successfully')
-    
-    # Test database connection
-    with app.app_context():
-        db.engine.connect()
-        logger.info('Successfully connected to the database')
+    for attempt in range(max_retries):
+        try:
+            if attempt > 0:
+                logger.info(f'SQLAlchemy initialization attempt {attempt + 1}')
+            
+            db = SQLAlchemy(app)
+            
+            with app.app_context():
+                # Test connection with version check
+                result = db.session.execute(db.text('SHOW server_version')).scalar()
+                logger.info(f'SQLAlchemy connected to PostgreSQL version: {result}')
+                db.session.commit()
+                logger.info('SQLAlchemy initialization successful')
+                break
+                
+        except Exception as e:
+            last_exception = e
+            logger.error(f'SQLAlchemy initialization attempt {attempt + 1} failed: {str(e)}')
+            if attempt < max_retries - 1:
+                time.sleep(retry_delay)
+                continue
+            else:
+                raise last_exception
+            
 except Exception as e:
-    logger.error(f'Error initializing database: {str(e)}')
+    logger.error(f'Fatal database initialization error: {str(e)}')
     raise
 
 class UserProfile(db.Model):
@@ -134,65 +200,98 @@ class EmergencyContact(db.Model):
 def init_db(add_sample_data=False):
     with app.app_context():
         try:
-            # Only create tables if they don't exist
+            # Test database connection first
+            db.session.execute(db.text('SELECT 1'))
+            db.session.commit()
+            logger.info('Database connection verified')
+
+            # Get list of existing tables
             inspector = db.inspect(db.engine)
             tables = inspector.get_table_names()
+            
+            # Create tables if they don't exist
             if not tables:
-                # Create tables only if database is empty
                 db.create_all()
                 logger.info("Database tables created successfully")
             else:
-                logger.info("Database tables already exist, skipping creation")
-            
-            # Check if we need to add new columns to the Medication table
+                logger.info("Database tables already exist")
+
+            # Ensure we have at least one user profile
+            profile = UserProfile.query.first()
+            if not profile:
+                logger.info("Creating default user profile")
+                profile = UserProfile(
+                    name="Default User",
+                    date_of_birth=datetime.now(),
+                    weight=0,
+                    height=0
+                )
+                db.session.add(profile)
+                db.session.commit()
+                logger.info("Default user profile created")
+
+            # Check and update table schemas if needed
             if 'medication' in tables:
-                existing_columns = [c['name'] for c in inspector.get_columns('medication')]
+                existing_columns = {c['name'] for c in inspector.get_columns('medication')}
+                required_columns = {
+                    'reminder_enabled',
+                    'reminder_times',
+                    'last_reminded'
+                }
                 
-                if 'reminder_enabled' not in existing_columns:
-                    logger.info("Adding reminder columns to Medication table")
-                    # Use PostgreSQL-specific syntax when using PostgreSQL
-                    if 'postgresql' in str(db.engine.url):
-                        with db.engine.connect() as conn:
-                            conn.execute(db.text(
-                                """
-                                ALTER TABLE medication 
-                                ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN DEFAULT FALSE,
-                                ADD COLUMN IF NOT EXISTS reminder_times VARCHAR(500),
-                                ADD COLUMN IF NOT EXISTS last_reminded TIMESTAMP;
-                                """
-                            ))
-                            conn.commit()
-                    else:
-                        # For SQLite, we need to create a new table with the new columns
-                        # This is a simplified version - in production, you'd want to preserve data
-                        with db.engine.connect() as conn:
-                            conn.execute(db.text(
-                                """
-                                ALTER TABLE medication 
-                                ADD COLUMN reminder_enabled BOOLEAN DEFAULT 0;
-                                """
-                            ))
-                            conn.execute(db.text(
-                                """
-                                ALTER TABLE medication 
-                                ADD COLUMN reminder_times VARCHAR(500);
-                                """
-                            ))
-                            conn.execute(db.text(
-                                """
-                                ALTER TABLE medication 
-                                ADD COLUMN last_reminded TIMESTAMP;
-                                """
-                            ))
-                            conn.commit()
-                            
-            if add_sample_data and not UserProfile.query.first():
-                logger.info("Adding sample data...")
-                # Add sample data implementation here if needed
-                pass
+                missing_columns = required_columns - existing_columns
                 
+                if missing_columns:
+                    logger.info(f"Adding missing columns to Medication table: {missing_columns}")
+                    
+                    # Use appropriate SQL syntax based on database type
+                    is_postgres = 'postgresql' in str(db.engine.url)
+                    
+                    for column in missing_columns:
+                        try:
+                            if is_postgres:
+                                if column == 'reminder_enabled':
+                                    db.session.execute(db.text(
+                                        "ALTER TABLE medication ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN DEFAULT FALSE"
+                                    ))
+                                elif column == 'reminder_times':
+                                    db.session.execute(db.text(
+                                        "ALTER TABLE medication ADD COLUMN IF NOT EXISTS reminder_times VARCHAR(500)"
+                                    ))
+                                elif column == 'last_reminded':
+                                    db.session.execute(db.text(
+                                        "ALTER TABLE medication ADD COLUMN IF NOT EXISTS last_reminded TIMESTAMP"
+                                    ))
+                            else:  # SQLite
+                                if column == 'reminder_enabled':
+                                    db.session.execute(db.text(
+                                        "ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT 0"
+                                    ))
+                                elif column == 'reminder_times':
+                                    db.session.execute(db.text(
+                                        "ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500)"
+                                    ))
+                                elif column == 'last_reminded':
+                                    db.session.execute(db.text(
+                                        "ALTER TABLE medication ADD COLUMN last_reminded TIMESTAMP"
+                                    ))
+                            db.session.commit()
+                            logger.info(f"Successfully added column: {column}")
+                        except Exception as e:
+                            logger.error(f"Error adding column {column}: {str(e)}")
+                            db.session.rollback()
+                            # Continue with other columns even if one fails
+                            continue
+
+            if add_sample_data and not Medication.query.first():
+                logger.info("No medications found, adding sample data is enabled but skipped for safety")
+                
+            db.session.commit()
+            logger.info("Database initialization completed successfully")
+            
         except Exception as e:
             logger.error(f"Error in init_db: {str(e)}")
+            db.session.rollback()
             raise
 
 # Initialize database when the app starts, but NEVER add sample data
@@ -200,29 +299,69 @@ init_db(add_sample_data=False)
 
 @app.route('/')
 def index():
-    # Get the current user's profile
-    profile = UserProfile.query.first()
-    
-    # Get latest vital signs
-    latest_vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).first()
-    
-    # Get medications for today
-    medications = Medication.query.all()
-    
-    # Process medication times
-    current_time = datetime.now()
-    for med in medications:
-        if med.reminder_times:
-            # If reminder_times exists, use the first time
-            med.time = med.reminder_times.split(',')[0].strip()
-        else:
-            # Default to morning if no specific time is set
-            med.time = "08:00"
-    
-    return render_template('index.html',
-                         profile=profile,
-                         latest_vitals=latest_vitals,
-                         medications=medications)
+    try:
+        # Get the current time
+        current_time = datetime.now()
+        
+        # Get the current user's profile
+        profile = UserProfile.query.first()
+        if not profile:
+            # Create a default profile if none exists
+            profile = UserProfile(
+                name="Default User",
+                date_of_birth=current_time,
+                weight=0,
+                height=0
+            )
+            try:
+                db.session.add(profile)
+                db.session.commit()
+            except Exception as e:
+                logger.error(f"Error creating default profile: {str(e)}")
+                db.session.rollback()
+                flash("Error creating default profile", "error")
+                return render_template('error.html'), 500
+        
+        # Get latest vital signs with error handling
+        try:
+            latest_vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).first()
+        except Exception as e:
+            logger.error(f"Error fetching vital signs: {str(e)}")
+            latest_vitals = None
+        
+        # Get medications with error handling
+        try:
+            medications = Medication.query.all()
+            
+            # Process medication times safely
+            for med in medications:
+                try:
+                    if med.reminder_times and med.reminder_times.strip():
+                        # If reminder_times exists and is not empty, use the first time
+                        times = med.reminder_times.split(',')
+                        med.time = times[0].strip() if times else "08:00"
+                    else:
+                        # Default to morning if no specific time is set
+                        med.time = "08:00"
+                except Exception as e:
+                    logger.error(f"Error processing medication times for med {med.id}: {str(e)}")
+                    med.time = "08:00"  # Set default time on error
+                    
+        except Exception as e:
+            logger.error(f"Error fetching medications: {str(e)}")
+            medications = []
+            
+        return render_template('index.html',
+                             profile=profile,
+                             latest_vitals=latest_vitals,
+                             medications=medications,
+                             current_time=current_time)
+                             
+    except Exception as e:
+        logger.error(f"Error in index route: {str(e)}")
+        db.session.rollback()  # Ensure any failed transaction is rolled back
+        flash("An error occurred while loading the page", "error")
+        return render_template('error.html'), 500
 
 @app.route('/add', methods=['GET', 'POST'])
 def add_medication():
@@ -291,43 +430,74 @@ def delete_medication(id):
 
 @app.route('/profile', methods=['GET', 'POST'])
 def profile():
-    profile = UserProfile.query.first()
-    if profile is None:
-        profile = UserProfile(
-            name="Default User",
-            date_of_birth=datetime.now(),
-            weight=0,
-            height=0
-        )
-        db.session.add(profile)
-        db.session.commit()
-
-    if request.method == 'POST':
-        profile.name = request.form['name']
-        profile.date_of_birth = datetime.strptime(request.form['date_of_birth'], '%Y-%m-%d')
-        
-        # Handle weight - convert empty string to None
-        weight = request.form['weight']
-        profile.weight = float(weight) if weight.strip() else None
-        
-        # Handle height - convert empty string to None
-        height = request.form['height']
-        profile.height = float(height) if height.strip() else None
-        
-        profile.gender = request.form['gender']
-        profile.blood_type = request.form['blood_type']
-        profile.allergies = request.form['allergies']
-        profile.medical_conditions = request.form['medical_conditions']
-
-        try:
+    try:
+        profile = UserProfile.query.first()
+        if profile is None:
+            profile = UserProfile(
+                name="Default User",
+                date_of_birth=datetime.now(),
+                weight=0,
+                height=0
+            )
+            db.session.add(profile)
             db.session.commit()
-            flash('Profile updated successfully!', 'success')
-        except Exception as e:
-            logger.error(f'Error updating profile: {str(e)}')
-            db.session.rollback()
-            flash('Error updating profile.', 'error')
 
-    return render_template('profile.html', profile=profile)
+        if request.method == 'POST':
+            try:
+                profile.name = request.form['name']
+                
+                # Handle date of birth with proper error handling
+                date_str = request.form['date_of_birth']
+                if date_str:
+                    try:
+                        profile.date_of_birth = datetime.strptime(date_str, '%Y-%m-%d')
+                    except ValueError as e:
+                        logger.error(f'Invalid date format: {str(e)}')
+                        flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
+                        return render_template('profile.html', profile=profile)
+                
+                # Handle weight with proper error handling
+                weight = request.form['weight']
+                if weight.strip():
+                    try:
+                        profile.weight = float(weight)
+                    except ValueError:
+                        flash('Invalid weight value. Please enter a number.', 'error')
+                        return render_template('profile.html', profile=profile)
+                else:
+                    profile.weight = None
+                
+                # Handle height with proper error handling
+                height = request.form['height']
+                if height.strip():
+                    try:
+                        profile.height = float(height)
+                    except ValueError:
+                        flash('Invalid height value. Please enter a number.', 'error')
+                        return render_template('profile.html', profile=profile)
+                else:
+                    profile.height = None
+                
+                # Handle other fields
+                profile.gender = request.form.get('gender', '')
+                profile.blood_type = request.form.get('blood_type', '')
+                profile.allergies = request.form.get('allergies', '')
+                profile.medical_conditions = request.form.get('medical_conditions', '')
+
+                db.session.commit()
+                flash('Profile updated successfully!', 'success')
+                
+            except Exception as e:
+                logger.error(f'Error updating profile: {str(e)}')
+                db.session.rollback()
+                flash('Error updating profile. Please try again.', 'error')
+                
+        return render_template('profile.html', profile=profile)
+        
+    except Exception as e:
+        logger.error(f'Error in profile route: {str(e)}')
+        flash('An unexpected error occurred. Please try again.', 'error')
+        return render_template('error.html'), 500
 
 @app.route('/emergency-contacts', methods=['GET'])
 def emergency_contacts():

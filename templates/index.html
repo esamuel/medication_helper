@@ -97,30 +97,31 @@
                     </thead>
                     <tbody>
                         {% for medication in medications %}
+                            {% set status = "Upcoming" %}
+                            {% set status_class = "info" %}
+                            {% if medication.time %}
+                                {% set med_time = medication.time.split(':') %}
+                                {% if med_time|length >= 2 and current_time %}
+                                    {% set med_hour = med_time[0]|int %}
+                                    {% set med_minute = med_time[1]|int %}
+                                    {% if current_time.hour > med_hour or (current_time.hour == med_hour and current_time.minute >= med_minute) %}
+                                        {% set status = "Due Now" %}
+                                        {% set status_class = "success" %}
+                                    {% endif %}
+                                {% else %}
+                                    {% set status = "Invalid Time" %}
+                                    {% set status_class = "warning" %}
+                                {% endif %}
+                            {% else %}
+                                {% set status = "No Time Set" %}
+                                {% set status_class = "warning" %}
+                            {% endif %}
                             <tr>
                                 <td>{{ medication.name }}</td>
                                 <td>{{ medication.dosage }}</td>
                                 <td>{{ medication.time }}</td>
                                 <td>
-                                    {% if medication.time %}
-                                        {% set med_time = medication.time.split(':') %}
-                                        {% if med_time|length >= 2 %}
-                                            {% set med_hour = med_time[0]|int %}
-                                            {% set med_minute = med_time[1]|int %}
-                                            {% set current_hour = current_time.hour %}
-                                            {% set current_minute = current_time.minute %}
-                                            
-                                            {% if current_hour > med_hour or (current_hour == med_hour and current_minute >= med_minute) %}
-                                                <span class="badge bg-success">Due Now</span>
-                                            {% else %}
-                                                <span class="badge bg-info">Upcoming</span>
-                                            {% endif %}
-                                        {% else %}
-                                            <span class="badge bg-warning">Invalid Time</span>
-                                        {% endif %}
-                                    {% else %}
-                                        <span class="badge bg-secondary">No Time Set</span>
-                                    {% endif %}
+                                    <span class="badge bg-{{ status_class }}">{{ status }}</span>
                                 </td>
                                 <td>
                                     <a href="{{ url_for('edit_medication', id=medication.id) }}" 
