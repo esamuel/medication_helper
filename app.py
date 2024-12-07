@@ -124,9 +124,6 @@ except Exception as e:
     logger.error(f'Fatal database initialization error: {str(e)}')
     raise
 
-# Initialize database when the app starts, but NEVER add sample data
-init_db(add_sample_data=False)
-
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
@@ -177,101 +174,89 @@ class EmergencyContact(db.Model):
     last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 def init_db(add_sample_data=False):
-    with app.app_context():
-        try:
-            # Test database connection first
-            db.session.execute(db.text('SELECT 1'))
-            db.session.commit()
-            logger.info('Database connection verified')
+    """Initialize the database and optionally add sample data."""
+    try:
+        with app.app_context():
+            # Create all tables
+            db.create_all()
+            logger.info("Database tables created successfully")
 
-            # Get list of existing tables
-            inspector = db.inspect(db.engine)
-            tables = inspector.get_table_names()
-            
-            # Create tables if they don't exist
-            if not tables:
-                db.create_all()
-                logger.info("Database tables created successfully")
-            else:
-                logger.info("Database tables already exist")
+            if add_sample_data:
+                # Only add sample data if explicitly requested
+                # Check if we already have a profile
+                if not UserProfile.query.first():
+                    # Add a sample profile
+                    sample_profile = UserProfile(
+                        name="John Doe",
+                        date_of_birth=datetime(1980, 1, 1),
+                        gender="Male",
+                        height=175.0,
+                        weight=70.0,
+                        blood_type="A+",
+                        allergies="None",
+                        medical_conditions="None"
+                    )
+                    db.session.add(sample_profile)
 
-            # Ensure we have at least one user profile
-            profile = UserProfile.query.first()
-            if not profile:
-                logger.info("Creating default user profile")
-                profile = UserProfile(
-                    name="Default User",
-                    date_of_birth=datetime.now(),
-                    weight=0,
-                    height=0
-                )
-                db.session.add(profile)
+                # Add sample medications if none exist
+                if not Medication.query.first():
+                    sample_medications = [
+                        Medication(
+                            name="Aspirin",
+                            dosage="100mg",
+                            frequency="Daily",
+                            time="08:00",
+                            notes="Take with food"
+                        ),
+                        Medication(
+                            name="Vitamin D",
+                            dosage="1000 IU",
+                            frequency="Daily",
+                            time="09:00",
+                            notes="Take with breakfast"
+                        )
+                    ]
+                    for med in sample_medications:
+                        db.session.add(med)
+
+                # Add sample vital signs if none exist
+                if not VitalSigns.query.first():
+                    sample_vitals = VitalSigns(
+                        systolic_bp=120,
+                        diastolic_bp=80,
+                        heart_rate=72,
+                        temperature=36.6,
+                        respiratory_rate=16,
+                        oxygen_saturation=98,
+                        blood_sugar=5.5,
+                        notes="Regular checkup"
+                    )
+                    db.session.add(sample_vitals)
+
+                # Add sample emergency contact if none exist
+                if not EmergencyContact.query.first():
+                    sample_contact = EmergencyContact(
+                        name="Jane Doe",
+                        relationship="Spouse",
+                        phone_primary="+1-555-0123",
+                        phone_secondary="+1-555-0124",
+                        email="jane.doe@example.com",
+                        address="123 Main St, Anytown, USA",
+                        notes="Primary emergency contact"
+                    )
+                    db.session.add(sample_contact)
+
+                # Commit all sample data
                 db.session.commit()
-                logger.info("Default user profile created")
-
-            # Check and update table schemas if needed
-            if 'medication' in tables:
-                existing_columns = {c['name'] for c in inspector.get_columns('medication')}
-                required_columns = {
-                    'reminder_enabled',
-                    'reminder_times',
-                    'last_reminded'
-                }
-                
-                missing_columns = required_columns - existing_columns
-                
-                if missing_columns:
-                    logger.info(f"Adding missing columns to Medication table: {missing_columns}")
-                    
-                    # Use appropriate SQL syntax based on database type
-                    is_postgres = 'postgresql' in str(db.engine.url)
-                    
-                    for column in missing_columns:
-                        try:
-                            if is_postgres:
-                                if column == 'reminder_enabled':
-                                    db.session.execute(db.text(
-                                        "ALTER TABLE medication ADD COLUMN IF NOT EXISTS reminder_enabled BOOLEAN DEFAULT FALSE"
-                                    ))
-                                elif column == 'reminder_times':
-                                    db.session.execute(db.text(
-                                        "ALTER TABLE medication ADD COLUMN IF NOT EXISTS reminder_times VARCHAR(500)"
-                                    ))
-                                elif column == 'last_reminded':
-                                    db.session.execute(db.text(
-                                        "ALTER TABLE medication ADD COLUMN IF NOT EXISTS last_reminded TIMESTAMP"
-                                    ))
-                            else:  # SQLite
-                                if column == 'reminder_enabled':
-                                    db.session.execute(db.text(
-                                        "ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT 0"
-                                    ))
-                                elif column == 'reminder_times':
-                                    db.session.execute(db.text(
-                                        "ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500)"
-                                    ))
-                                elif column == 'last_reminded':
-                                    db.session.execute(db.text(
-                                        "ALTER TABLE medication ADD COLUMN last_reminded TIMESTAMP"
-                                    ))
-                            db.session.commit()
-                            logger.info(f"Successfully added column: {column}")
-                        except Exception as e:
-                            logger.error(f"Error adding column {column}: {str(e)}")
-                            db.session.rollback()
-                            # Continue with other columns even if one fails
-                            continue
-
-            if add_sample_data and not Medication.query.first():
-                logger.info("No medications found, adding sample data is enabled but skipped for safety")
-                
-            db.session.commit()
-            logger.info("Database initialization completed successfully")
+                logger.info("Sample data added successfully")
             
-        except Exception as e:
-            logger.error(f"Error in init_db: {str(e)}")
-            db.session.rollback()
-            raise
+    except Exception as e:
+        logger.error(f"Error initializing database: {str(e)}")
+        db.session.rollback()
+        raise
+
+# Initialize database when the app starts, but NEVER add sample data
+init_db(add_sample_data=False)
 
 @app.route('/')
 def index():
