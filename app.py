@@ -134,11 +134,6 @@ class EmergencyContact(db.Model):
 def init_db(add_sample_data=False):
     with app.app_context():
         try:
-            # Check if database file exists and has data
-            if os.path.exists(db_path) and os.path.getsize(db_path) > 0:
-                logger.info("Database file exists and has data, skipping initialization")
-                return
-            
             # Only create tables if they don't exist
             inspector = db.inspect(db.engine)
             tables = inspector.get_table_names()
@@ -168,22 +163,36 @@ def init_db(add_sample_data=False):
                             ))
                             conn.commit()
                     else:
-                        # SQLite syntax for local development
+                        # For SQLite, we need to create a new table with the new columns
+                        # This is a simplified version - in production, you'd want to preserve data
                         with db.engine.connect() as conn:
-                            try:
-                                conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_enabled BOOLEAN DEFAULT FALSE;"))
-                                conn.execute(db.text("ALTER TABLE medication ADD COLUMN reminder_times VARCHAR(500);"))
-                                conn.execute(db.text("ALTER TABLE medication ADD COLUMN last_reminded DATETIME;"))
-                                conn.commit()
-                            except Exception as e:
-                                logger.warning(f"Column might already exist: {str(e)}")
-                                conn.rollback()
-                    
-                    logger.info("Successfully added reminder columns")
-
+                            conn.execute(db.text(
+                                """
+                                ALTER TABLE medication 
+                                ADD COLUMN reminder_enabled BOOLEAN DEFAULT 0;
+                                """
+                            ))
+                            conn.execute(db.text(
+                                """
+                                ALTER TABLE medication 
+                                ADD COLUMN reminder_times VARCHAR(500);
+                                """
+                            ))
+                            conn.execute(db.text(
+                                """
+                                ALTER TABLE medication 
+                                ADD COLUMN last_reminded TIMESTAMP;
+                                """
+                            ))
+                            conn.commit()
+                            
+            if add_sample_data and not UserProfile.query.first():
+                logger.info("Adding sample data...")
+                # Add sample data implementation here if needed
+                pass
+                
         except Exception as e:
-            logger.error(f"Error initializing database: {str(e)}")
-            db.session.rollback()
+            logger.error(f"Error in init_db: {str(e)}")
             raise
 
 # Initialize database when the app starts, but NEVER add sample data
