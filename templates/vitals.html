@@ -143,6 +143,14 @@ document.addEventListener('DOMContentLoaded', function() {
                 backgroundColor: 'rgba(153, 102, 255, 0.1)',
                 yAxisID: 'y2',
                 tension: 0.1
+            },
+            {
+                label: 'Blood Sugar (mg/dL)',
+                data: [{% for vital in vitals %}{{ vital.blood_sugar if vital.blood_sugar is not none else 'null' }}{% if not loop.last %}, {% endif %}{% endfor %}],
+                borderColor: 'rgb(255, 206, 86)',
+                backgroundColor: 'rgba(255, 206, 86, 0.1)',
+                yAxisID: 'y3',
+                tension: 0.1
             }
         ]
     };
@@ -215,6 +223,18 @@ document.addEventListener('DOMContentLoaded', function() {
                 title: {
                     display: true,
                     text: 'O₂ Saturation (%)'
+                },
+                grid: {
+                    drawOnChartArea: false
+                }
+            },
+            y3: {
+                type: 'linear',
+                display: true,
+                position: 'right',
+                title: {
+                    display: true,
+                    text: 'Blood Sugar (mg/dL)'
                 },
                 grid: {
                     drawOnChartArea: false
