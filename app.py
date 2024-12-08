@@ -1,6 +1,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import zoneinfo
 import os
 from dotenv import load_dotenv
 import sys
@@ -18,11 +19,18 @@ logger.info('Starting up the Flask application...')
 # Initialize Flask app
 app = Flask(__name__)
 
+# Set timezone to local timezone (Israel)
+local_timezone = zoneinfo.ZoneInfo("Asia/Jerusalem")
+
 @app.template_filter('format_age')
 def format_age(dob):
     if not dob:
         return ""
-    today = datetime.now()
+    today = datetime.now(local_timezone)
+    # Convert dob to timezone-aware if it's naive
+    if dob.tzinfo is None:
+        dob = dob.replace(tzinfo=local_timezone)
+    
     years = today.year - dob.year
     months = today.month - dob.month
     
@@ -60,15 +68,15 @@ except Exception as e:
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100), nullable=False)
-    date_of_birth = db.Column(db.DateTime)
+    date_of_birth = db.Column(db.DateTime(timezone=True))
     gender = db.Column(db.String(20))
     height = db.Column(db.Float)  # in cm
     weight = db.Column(db.Float)  # in kg
     blood_type = db.Column(db.String(10))
     allergies = db.Column(db.Text)
     medical_conditions = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(local_timezone))
+    last_updated = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(local_timezone), onupdate=lambda: datetime.now(local_timezone))
 
 class Medication(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -77,14 +85,14 @@ class Medication(db.Model):
     frequency = db.Column(db.String(100))
     time = db.Column(db.String(50))
     notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(local_timezone))
     reminder_enabled = db.Column(db.Boolean, default=False)
     reminder_times = db.Column(db.String(500))  # Store times as JSON string
-    last_reminded = db.Column(db.DateTime)
+    last_reminded = db.Column(db.DateTime(timezone=True))
 
 class VitalSigns(db.Model):
     id = db.Column(db.Integer, primary_key=True)
-    date_time = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    date_time = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(local_timezone))
     systolic_bp = db.Column(db.Integer)  # mmHg
     diastolic_bp = db.Column(db.Integer)  # mmHg
     heart_rate = db.Column(db.Integer)  # bpm
@@ -103,8 +111,8 @@ class EmergencyContact(db.Model):
     email = db.Column(db.String(120))
     address = db.Column(db.Text)
     notes = db.Column(db.Text)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(local_timezone))
+    last_updated = db.Column(db.DateTime(timezone=True), default=lambda: datetime.now(local_timezone), onupdate=lambda: datetime.now(local_timezone))
 
 def convert_blood_sugar():
     """Convert blood sugar values from mmol/L to mg/dL"""
@@ -139,7 +147,7 @@ def init_db(add_sample_data=False):
                     # Add a sample profile
                     sample_profile = UserProfile(
                         name="John Doe",
-                        date_of_birth=datetime(1980, 1, 1),
+                        date_of_birth=datetime(1980, 1, 1, tzinfo=local_timezone),
                         gender="Male",
                         height=175.0,
                         weight=70.0,
@@ -213,7 +221,7 @@ init_db(add_sample_data=False)
 def index():
     try:
         # Get the current time
-        current_time = datetime.now()
+        current_time = datetime.now(local_timezone)
         
         # Get the current user's profile
         profile = UserProfile.query.first()
@@ -347,7 +355,7 @@ def profile():
         if profile is None:
             profile = UserProfile(
                 name="Default User",
-                date_of_birth=datetime.now(),
+                date_of_birth=datetime.now(local_timezone),
                 weight=0,
                 height=0
             )
@@ -362,7 +370,7 @@ def profile():
                 date_str = request.form['date_of_birth']
                 if date_str:
                     try:
-                        profile.date_of_birth = datetime.strptime(date_str, '%Y-%m-%d')
+                        profile.date_of_birth = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=local_timezone)
                     except ValueError as e:
                         logger.error(f'Invalid date format: {str(e)}')
                         flash('Invalid date format. Please use YYYY-MM-DD.', 'error')
@@ -494,7 +502,7 @@ def vitals():
 def add_vitals():
     if request.method == 'POST':
         new_vitals = VitalSigns(
-            date_time=datetime.strptime(request.form['date_time'], '%Y-%m-%dT%H:%M'),
+            date_time=datetime.strptime(request.form['date_time'], '%Y-%m-%dT%H:%M').replace(tzinfo=local_timezone),
             systolic_bp=request.form.get('systolic_bp', type=int),
             diastolic_bp=request.form.get('diastolic_bp', type=int),
             heart_rate=request.form.get('heart_rate', type=int),
@@ -515,7 +523,7 @@ def add_vitals():
             db.session.rollback()
             flash('Error recording vital signs.', 'error')
     
-    return render_template('add_vitals.html', now=datetime.now())
+    return render_template('add_vitals.html', now=datetime.now(local_timezone))
 
 @app.route('/edit_vitals/<int:id>', methods=['GET', 'POST'])
 def edit_vitals(id):
@@ -592,7 +600,7 @@ def update_medication_reminders(id):
 
 @app.route('/api/check_reminders')
 def check_reminders():
-    current_time = datetime.now()
+    current_time = datetime.now(local_timezone)
     current_time_str = current_time.strftime('%H:%M')
     
     # Find medications with reminders at the current time

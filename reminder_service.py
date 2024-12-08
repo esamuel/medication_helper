@@ -6,13 +6,17 @@ import os
 import platform
 import subprocess
 from pathlib import Path
+import zoneinfo
 
 DB_PATH = Path(__file__).parent / 'medications.db'
+
+# Set timezone to local timezone (Israel)
+local_timezone = zoneinfo.ZoneInfo("Asia/Jerusalem")
 
 def get_due_reminders():
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    current_time = datetime.now().strftime('%H:%M')
+    current_time = datetime.now(local_timezone).strftime('%H:%M')
     
     cursor.execute('''
         SELECT r.id, r.time, r.message, m.name
@@ -35,6 +39,7 @@ def play_notification_sound():
         winsound.PlaySound("SystemAsterisk", winsound.SND_ALIAS)
 
 def check_reminders():
+    """Check for medication reminders"""
     reminders = get_due_reminders()
     for reminder in reminders:
         _, time, message, med_name = reminder
