@@ -162,7 +162,7 @@ class VitalSigns(db.Model):
     temperature = db.Column(db.Float)  # Celsius
     respiratory_rate = db.Column(db.Integer)  # breaths per minute
     oxygen_saturation = db.Column(db.Integer)  # percentage
-    blood_sugar = db.Column(db.Float)  # mmol/L
+    blood_sugar = db.Column(db.Float)  # mg/dL
     notes = db.Column(db.Text)
 
 class EmergencyContact(db.Model):
@@ -232,7 +232,7 @@ def init_db(add_sample_data=False):
                         temperature=36.6,
                         respiratory_rate=16,
                         oxygen_saturation=98,
-                        blood_sugar=5.5,
+                        blood_sugar=100,
                         notes="Regular checkup"
                     )
                     db.session.add(sample_vitals)

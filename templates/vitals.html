@@ -48,7 +48,7 @@
                         <td>{{ "%.1f"|format(vital.temperature) if vital.temperature else 'N/A' }}°C</td>
                         <td>{{ vital.respiratory_rate or 'N/A' }} /min</td>
                         <td>{{ vital.oxygen_saturation or 'N/A' }}%</td>
-                        <td>{{ vital.blood_sugar or 'N/A' }} mmol/L</td>
+                        <td>{{ vital.blood_sugar or 'N/A' }} mg/dL</td>
                         <td>
                             {% if vital.notes %}
                                 <button type="button" class="btn btn-sm btn-outline-info" 
