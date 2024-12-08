@@ -70,6 +70,15 @@
                         <a class="nav-link" href="{{ url_for('profile') }}">My Profile</a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('reminders') }}">Reminders</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('blood_pressure') }}">Blood Pressure</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="{{ url_for('blood_tests') }}">Blood Tests</a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('emergency_contacts') }}">
                             <i class="bi bi-person-lines-fill"></i> Emergency Contacts
                         </a>
@@ -77,11 +86,6 @@
                     <li class="nav-item">
                         <a class="nav-link" href="{{ url_for('vitals') }}">
                             <i class="bi bi-heart-pulse"></i> Vital Signs
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('reminders') }}">
-                            <i class="bi bi-bell"></i> Reminders
                         </a>
                     </li>
                 </ul>

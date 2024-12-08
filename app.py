@@ -90,16 +90,19 @@ class Medication(db.Model):
     reminder_times = db.Column(db.String(500))  # Store times as JSON string
     last_reminded = db.Column(db.DateTime(timezone=True))
 
-class VitalSigns(db.Model):
+class BloodPressure(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     date_time = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(local_timezone))
-    systolic_bp = db.Column(db.Integer)  # mmHg
-    diastolic_bp = db.Column(db.Integer)  # mmHg
-    heart_rate = db.Column(db.Integer)  # bpm
-    temperature = db.Column(db.Float)  # Celsius
-    respiratory_rate = db.Column(db.Integer)  # breaths per minute
-    oxygen_saturation = db.Column(db.Integer)  # percentage
+    systolic = db.Column(db.Integer)  # mmHg
+    diastolic = db.Column(db.Integer)  # mmHg
+    pulse = db.Column(db.Integer)  # bpm
+    notes = db.Column(db.Text)
+
+class BloodTests(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    date_time = db.Column(db.DateTime(timezone=True), nullable=False, default=lambda: datetime.now(local_timezone))
     blood_sugar = db.Column(db.Float)  # mg/dL
+    oxygen_saturation = db.Column(db.Integer)  # percentage
     notes = db.Column(db.Text)
 
 class EmergencyContact(db.Model):
@@ -118,11 +121,11 @@ def convert_blood_sugar():
     """Convert blood sugar values from mmol/L to mg/dL"""
     try:
         with app.app_context():
-            vitals = VitalSigns.query.all()
-            for vital in vitals:
-                if vital.blood_sugar is not None:
+            blood_tests = BloodTests.query.all()
+            for test in blood_tests:
+                if test.blood_sugar is not None:
                     # Convert from mmol/L to mg/dL (multiplication factor is approximately 18)
-                    vital.blood_sugar = round(vital.blood_sugar * 18.0, 1)
+                    test.blood_sugar = round(test.blood_sugar * 18.0, 1)
             db.session.commit()
             logger.info("Blood sugar values converted successfully")
     except Exception as e:
@@ -178,19 +181,24 @@ def init_db(add_sample_data=False):
                     for med in sample_medications:
                         db.session.add(med)
 
-                # Add sample vital signs if none exist
-                if not VitalSigns.query.first():
-                    sample_vitals = VitalSigns(
-                        systolic_bp=120,
-                        diastolic_bp=80,
-                        heart_rate=72,
-                        temperature=36.6,
-                        respiratory_rate=16,
-                        oxygen_saturation=98,
-                        blood_sugar=100,  # This is now in mg/dL
+                # Add sample blood pressure if none exist
+                if not BloodPressure.query.first():
+                    sample_blood_pressure = BloodPressure(
+                        systolic=120,
+                        diastolic=80,
+                        pulse=72,
                         notes="Regular checkup"
                     )
-                    db.session.add(sample_vitals)
+                    db.session.add(sample_blood_pressure)
+
+                # Add sample blood tests if none exist
+                if not BloodTests.query.first():
+                    sample_blood_test = BloodTests(
+                        blood_sugar=100,  # This is now in mg/dL
+                        oxygen_saturation=98,
+                        notes="Regular checkup"
+                    )
+                    db.session.add(sample_blood_test)
 
                 # Add sample emergency contact if none exist
                 if not EmergencyContact.query.first():
@@ -242,12 +250,19 @@ def index():
                 flash("Error creating default profile", "error")
                 return render_template('error.html'), 500
         
-        # Get latest vital signs with error handling
+        # Get latest blood pressure with error handling
         try:
-            latest_vitals = VitalSigns.query.order_by(VitalSigns.date_time.desc()).first()
+            latest_blood_pressure = BloodPressure.query.order_by(BloodPressure.date_time.desc()).first()
         except Exception as e:
-            logger.error(f"Error fetching vital signs: {str(e)}")
-            latest_vitals = None
+            logger.error(f"Error fetching blood pressure: {str(e)}")
+            latest_blood_pressure = None
+        
+        # Get latest blood tests with error handling
+        try:
+            latest_blood_tests = BloodTests.query.order_by(BloodTests.date_time.desc()).first()
+        except Exception as e:
+            logger.error(f"Error fetching blood tests: {str(e)}")
+            latest_blood_tests = None
         
         # Get medications with error handling
         try:
@@ -273,7 +288,8 @@ def index():
             
         return render_template('index.html',
                              profile=profile,
-                             latest_vitals=latest_vitals,
+                             latest_blood_pressure=latest_blood_pressure,
+                             latest_blood_tests=latest_blood_tests,
                              medications=medications,
                              current_time=current_time)
                              
@@ -488,87 +504,149 @@ def delete_emergency_contact(id):
     
     return redirect(url_for('emergency_contacts'))
 
-@app.route('/vitals', methods=['GET'])
-def vitals():
+@app.route('/blood-pressure', methods=['GET'])
+def blood_pressure():
     try:
-        vitals_list = VitalSigns.query.order_by(VitalSigns.date_time.desc()).all()
-        return render_template('vitals.html', vitals=vitals_list)
+        blood_pressure_list = BloodPressure.query.order_by(BloodPressure.date_time.desc()).all()
+        return render_template('blood_pressure.html', blood_pressure=blood_pressure_list)
     except Exception as e:
-        logger.error(f"Error fetching vital signs: {str(e)}")
-        flash('Error loading vital signs', 'error')
-        return render_template('vitals.html', vitals=[])
+        logger.error(f"Error fetching blood pressure: {str(e)}")
+        flash('Error loading blood pressure', 'error')
+        return render_template('blood_pressure.html', blood_pressure=[])
 
-@app.route('/vitals/add', methods=['GET', 'POST'])
-def add_vitals():
+@app.route('/blood-pressure/add', methods=['GET', 'POST'])
+def add_blood_pressure():
     if request.method == 'POST':
-        new_vitals = VitalSigns(
-            date_time=datetime.strptime(request.form['date_time'], '%Y-%m-%dT%H:%M').replace(tzinfo=local_timezone),
-            systolic_bp=request.form.get('systolic_bp', type=int),
-            diastolic_bp=request.form.get('diastolic_bp', type=int),
-            heart_rate=request.form.get('heart_rate', type=int),
-            temperature=request.form.get('temperature', type=float),
-            respiratory_rate=request.form.get('respiratory_rate', type=int),
-            oxygen_saturation=request.form.get('oxygen_saturation', type=int),
-            blood_sugar=request.form.get('blood_sugar', type=float),
+        new_blood_pressure = BloodPressure(
+            systolic=request.form.get('systolic', type=int),
+            diastolic=request.form.get('diastolic', type=int),
+            pulse=request.form.get('pulse', type=int),
             notes=request.form.get('notes')
         )
         
         try:
-            db.session.add(new_vitals)
+            db.session.add(new_blood_pressure)
             db.session.commit()
-            flash('Vital signs recorded successfully!', 'success')
-            return redirect(url_for('vitals'))
+            flash('Blood pressure recorded successfully!', 'success')
+            return redirect(url_for('blood_pressure'))
         except Exception as e:
-            logger.error(f'Error recording vital signs: {str(e)}')
+            logger.error(f'Error recording blood pressure: {str(e)}')
             db.session.rollback()
-            flash('Error recording vital signs.', 'error')
+            flash('Error recording blood pressure.', 'error')
     
-    return render_template('add_vitals.html', now=datetime.now(local_timezone))
+    return render_template('add_blood_pressure.html', now=datetime.now(local_timezone))
 
-@app.route('/edit_vitals/<int:id>', methods=['GET', 'POST'])
-def edit_vitals(id):
+@app.route('/edit_blood_pressure/<int:id>', methods=['GET', 'POST'])
+def edit_blood_pressure(id):
     try:
-        vital = VitalSigns.query.get_or_404(id)
+        blood_pressure = BloodPressure.query.get_or_404(id)
         
         if request.method == 'POST':
-            vital.systolic_bp = request.form.get('systolic_bp', type=int)
-            vital.diastolic_bp = request.form.get('diastolic_bp', type=int)
-            vital.heart_rate = request.form.get('heart_rate', type=int)
-            vital.temperature = request.form.get('temperature', type=float)
-            vital.respiratory_rate = request.form.get('respiratory_rate', type=int)
-            vital.oxygen_saturation = request.form.get('oxygen_saturation', type=int)
-            vital.blood_sugar = request.form.get('blood_sugar', type=float)
-            vital.notes = request.form.get('notes')
+            blood_pressure.systolic = request.form.get('systolic', type=int)
+            blood_pressure.diastolic = request.form.get('diastolic', type=int)
+            blood_pressure.pulse = request.form.get('pulse', type=int)
+            blood_pressure.notes = request.form.get('notes')
             
             try:
                 db.session.commit()
-                flash('Vital signs updated successfully!', 'success')
-                return redirect(url_for('vitals'))
+                flash('Blood pressure updated successfully!', 'success')
+                return redirect(url_for('blood_pressure'))
             except Exception as e:
                 db.session.rollback()
-                logger.error(f"Error updating vital signs: {str(e)}")
-                flash('Error updating vital signs', 'error')
+                logger.error(f"Error updating blood pressure: {str(e)}")
+                flash('Error updating blood pressure', 'error')
                 
-        return render_template('edit_vitals.html', vital=vital)
+        return render_template('edit_blood_pressure.html', blood_pressure=blood_pressure)
         
     except Exception as e:
-        logger.error(f"Error in edit_vitals: {str(e)}")
-        flash('Error accessing vital signs', 'error')
-        return redirect(url_for('vitals'))
+        logger.error(f"Error in edit_blood_pressure: {str(e)}")
+        flash('Error accessing blood pressure', 'error')
+        return redirect(url_for('blood_pressure'))
 
-@app.route('/delete_vitals/<int:id>')
-def delete_vitals(id):
+@app.route('/delete_blood_pressure/<int:id>')
+def delete_blood_pressure(id):
     try:
-        vital = VitalSigns.query.get_or_404(id)
-        db.session.delete(vital)
+        blood_pressure = BloodPressure.query.get_or_404(id)
+        db.session.delete(blood_pressure)
         db.session.commit()
-        flash('Vital signs deleted successfully!', 'success')
+        flash('Blood pressure deleted successfully!', 'success')
     except Exception as e:
         db.session.rollback()
-        logger.error(f"Error deleting vital signs: {str(e)}")
-        flash('Error deleting vital signs', 'error')
+        logger.error(f"Error deleting blood pressure: {str(e)}")
+        flash('Error deleting blood pressure', 'error')
     
-    return redirect(url_for('vitals'))
+    return redirect(url_for('blood_pressure'))
+
+@app.route('/blood-tests', methods=['GET'])
+def blood_tests():
+    try:
+        blood_tests_list = BloodTests.query.order_by(BloodTests.date_time.desc()).all()
+        return render_template('blood_tests.html', blood_tests=blood_tests_list)
+    except Exception as e:
+        logger.error(f"Error fetching blood tests: {str(e)}")
+        flash('Error loading blood tests', 'error')
+        return render_template('blood_tests.html', blood_tests=[])
+
+@app.route('/blood-tests/add', methods=['GET', 'POST'])
+def add_blood_tests():
+    if request.method == 'POST':
+        new_blood_test = BloodTests(
+            blood_sugar=request.form.get('blood_sugar', type=float),
+            oxygen_saturation=request.form.get('oxygen_saturation', type=int),
+            notes=request.form.get('notes')
+        )
+        
+        try:
+            db.session.add(new_blood_test)
+            db.session.commit()
+            flash('Blood test recorded successfully!', 'success')
+            return redirect(url_for('blood_tests'))
+        except Exception as e:
+            logger.error(f'Error recording blood test: {str(e)}')
+            db.session.rollback()
+            flash('Error recording blood test.', 'error')
+    
+    return render_template('add_blood_tests.html', now=datetime.now(local_timezone))
+
+@app.route('/edit_blood_tests/<int:id>', methods=['GET', 'POST'])
+def edit_blood_tests(id):
+    try:
+        blood_test = BloodTests.query.get_or_404(id)
+        
+        if request.method == 'POST':
+            blood_test.blood_sugar = request.form.get('blood_sugar', type=float)
+            blood_test.oxygen_saturation = request.form.get('oxygen_saturation', type=int)
+            blood_test.notes = request.form.get('notes')
+            
+            try:
+                db.session.commit()
+                flash('Blood test updated successfully!', 'success')
+                return redirect(url_for('blood_tests'))
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error updating blood test: {str(e)}")
+                flash('Error updating blood test', 'error')
+                
+        return render_template('edit_blood_tests.html', blood_test=blood_test)
+        
+    except Exception as e:
+        logger.error(f"Error in edit_blood_tests: {str(e)}")
+        flash('Error accessing blood test', 'error')
+        return redirect(url_for('blood_tests'))
+
+@app.route('/delete_blood_tests/<int:id>')
+def delete_blood_tests(id):
+    try:
+        blood_test = BloodTests.query.get_or_404(id)
+        db.session.delete(blood_test)
+        db.session.commit()
+        flash('Blood test deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting blood test: {str(e)}")
+        flash('Error deleting blood test', 'error')
+    
+    return redirect(url_for('blood_tests'))
 
 @app.route('/reminders')
 def reminders():

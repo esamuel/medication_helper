@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-4">
+    <h2>Add Blood Pressure Record</h2>
+    <form method="POST">
+        <div class="row">
+            <div class="col-md-4 mb-3">
+                <label for="systolic" class="form-label">Systolic Pressure (mmHg)</label>
+                <input type="number" class="form-control" id="systolic" name="systolic" required>
+            </div>
+            <div class="col-md-4 mb-3">
+                <label for="diastolic" class="form-label">Diastolic Pressure (mmHg)</label>
+                <input type="number" class="form-control" id="diastolic" name="diastolic" required>
+            </div>
+            <div class="col-md-4 mb-3">
+                <label for="pulse" class="form-label">Pulse (bpm)</label>
+                <input type="number" class="form-control" id="pulse" name="pulse" required>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label for="notes" class="form-label">Notes</label>
+            <textarea class="form-control" id="notes" name="notes" rows="3"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary">Save Record</button>
+        <a href="{{ url_for('blood_pressure') }}" class="btn btn-secondary">Cancel</a>
+    </form>
+</div>
+{% endblock %}
