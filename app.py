@@ -45,88 +45,17 @@ else:
 
 # Configure SQLAlchemy
 try:
-    if os.environ.get('DATABASE_URL'):
-        # Handle Render's database URL format
-        database_url = os.environ.get('DATABASE_URL')
-        if database_url.startswith('postgres://'):
-            database_url = database_url.replace('postgres://', 'postgresql://', 1)
-            
-        # Set up basic configuration with PostgreSQL 16 specific settings
-        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
-        app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
-        app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-            'pool_pre_ping': True,
-            'pool_size': 1,
-            'max_overflow': 0,
-            'connect_args': {
-                'connect_timeout': 10,
-                'options': '-c timezone=UTC -c client_encoding=UTF8 -c jit=off'
-            }
-        }
-        
-        # Import and configure psycopg2 directly
-        import psycopg2
-        from psycopg2.extensions import ISOLATION_LEVEL_AUTOCOMMIT, parse_dsn
-        
-        # Parse the URL to get connection parameters
-        dsn = parse_dsn(database_url)
-        
-        # Test direct connection first with PostgreSQL 16 specific settings
-        try:
-            logger.info("Testing direct psycopg2 connection...")
-            conn = psycopg2.connect(
-                **dsn,
-                sslmode='require',
-                connect_timeout=10,
-                options="-c timezone=UTC -c client_encoding=UTF8 -c jit=off"
-            )
-            conn.set_isolation_level(ISOLATION_LEVEL_AUTOCOMMIT)
-            
-            # Test connection and get PostgreSQL version
-            cur = conn.cursor()
-            cur.execute('SHOW server_version')
-            version = cur.fetchone()[0]
-            logger.info(f"Connected to PostgreSQL version: {version}")
-            
-            cur.close()
-            conn.close()
-            logger.info("Direct connection test successful")
-        except Exception as e:
-            logger.error(f"Direct connection test failed: {str(e)}")
-            raise
-            
-        logger.info('Using PostgreSQL 16 database on Render')
-    else:
-        # Local SQLite database - store in a persistent location
-        db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'medications.db')
-        # Create the data directory if it doesn't exist
-        os.makedirs(os.path.dirname(db_path), exist_ok=True)
-        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{db_path}'
-        logger.info(f'Using SQLite database at {db_path} (local development)')
-
+    # Use SQLite by default
+    database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'medication_helper.db')
+    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{database_path}'
+    app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+    
     # Initialize SQLAlchemy
     db = SQLAlchemy(app)
-    
-    # Test database connection once
-    try:
-        with app.app_context():
-            # Create all tables
-            db.create_all()
-            logger.info("Database tables created successfully")
-
-            # Test connection with version check
-            if 'postgresql' in str(db.engine.url):
-                result = db.session.execute(db.text('SHOW server_version')).scalar()
-                logger.info(f'Connected to PostgreSQL version: {result}')
-            db.session.commit()
-            logger.info('Database connection successful')
-    except Exception as e:
-        logger.error(f'Database connection test failed: {str(e)}')
-        raise
-
+    logger.info('Successfully configured SQLite database')
 except Exception as e:
     logger.error(f'Fatal database initialization error: {str(e)}')
-    raise
+    sys.exit(1)
 
 class UserProfile(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -177,6 +106,21 @@ class EmergencyContact(db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_updated = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
+def convert_blood_sugar():
+    """Convert blood sugar values from mmol/L to mg/dL"""
+    try:
+        with app.app_context():
+            vitals = VitalSigns.query.all()
+            for vital in vitals:
+                if vital.blood_sugar is not None:
+                    # Convert from mmol/L to mg/dL (multiplication factor is approximately 18)
+                    vital.blood_sugar = round(vital.blood_sugar * 18.0, 1)
+            db.session.commit()
+            logger.info("Blood sugar values converted successfully")
+    except Exception as e:
+        logger.error(f"Error converting blood sugar values: {str(e)}")
+        db.session.rollback()
+
 def init_db(add_sample_data=False):
     """Initialize the database and optionally add sample data."""
     try:
@@ -184,6 +128,9 @@ def init_db(add_sample_data=False):
             # Create all tables
             db.create_all()
             logger.info("Database tables created successfully")
+
+            # Convert blood sugar values from mmol/L to mg/dL
+            convert_blood_sugar()
 
             if add_sample_data:
                 # Only add sample data if explicitly requested
@@ -232,7 +179,7 @@ def init_db(add_sample_data=False):
                         temperature=36.6,
                         respiratory_rate=16,
                         oxygen_saturation=98,
-                        blood_sugar=100,
+                        blood_sugar=100,  # This is now in mg/dL
                         notes="Regular checkup"
                     )
                     db.session.add(sample_vitals)
