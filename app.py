@@ -25,6 +25,11 @@ medication_bp = Blueprint('medication', __name__, url_prefix='/medication')
 emergency_contacts_bp = Blueprint('emergency_contacts', __name__, url_prefix='/emergency-contacts')
 vitals_bp = Blueprint('vitals', __name__, url_prefix='/vitals')
 
+# Root route
+@app.route('/')
+def root():
+    return redirect(url_for('medication.index'))
+
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
 
