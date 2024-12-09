@@ -290,7 +290,7 @@ def add_vitals():
         logger.error(f"Error in add vitals: {str(e)}")
         return render_template('error.html', error=str(e)), 500
 
-# Register blueprints
+# Register blueprints AFTER all routes are defined
 app.register_blueprint(medication_bp)
 app.register_blueprint(emergency_contacts_bp)
 app.register_blueprint(vitals_bp)
