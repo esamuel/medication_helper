@@ -136,6 +136,44 @@ def index():
         flash('Error loading medications', 'error')
         return render_template('error.html', error=str(e)), 500
 
+@medication_bp.route('/reminders', methods=['GET'])
+def reminders():
+    try:
+        medications = Medication.query.filter_by(reminder_enabled=True).all()
+        now = datetime.now(local_timezone)
+        
+        # Process medications with reminders
+        medications_with_times = []
+        for med in medications:
+            if med.reminder_times:
+                reminder_times = med.reminder_times.split(',')
+                for time_str in reminder_times:
+                    if time_str.strip():
+                        try:
+                            hour, minute = map(int, time_str.strip().split(':'))
+                            reminder_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                            
+                            # If the time has passed today, set it for tomorrow
+                            if reminder_time < now:
+                                reminder_time = reminder_time + timedelta(days=1)
+                            
+                            medications_with_times.append({
+                                'medication': med,
+                                'next_reminder': reminder_time,
+                                'time_until': reminder_time - now
+                            })
+                        except ValueError:
+                            logger.error(f"Invalid time format for medication {med.id}: {time_str}")
+                            continue
+        
+        # Sort by next reminder time
+        medications_with_times.sort(key=lambda x: x['next_reminder'])
+        
+        return render_template('reminders.html', medications=medications_with_times, now=now)
+    except Exception as e:
+        logger.error(f"Error loading reminders: {str(e)}")
+        return render_template('error.html', error=str(e)), 500
+
 @medication_bp.route('/profile', methods=['GET', 'POST'])
 def profile():
     try:

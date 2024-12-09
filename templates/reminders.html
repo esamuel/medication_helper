@@ -3,262 +3,59 @@
 {% block title %}Medication Reminders{% endblock %}
 
 {% block content %}
-<div class="container">
-    <h1 class="mb-4">Medication Reminders</h1>
-    
-    <div class="row">
-        <div class="col-md-12">
-            <div class="card mb-4">
-                <div class="card-body">
-                    <h5 class="card-title">Notification Settings</h5>
-                    <div class="alert alert-info" id="notification-status">
-                        Checking notification permissions...
-                    </div>
-                    <button class="btn btn-primary" id="enable-notifications">Enable Notifications</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="row">
-        <div class="col-md-12">
+<div class="container mt-4">
+    <div class="row justify-content-center">
+        <div class="col-md-10">
             <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h2 class="mb-0">Medication Reminders</h2>
+                    <a href="{{ url_for('medication.index') }}" class="btn btn-primary">
+                        <i class="bi bi-plus-lg"></i> Add Medication
+                    </a>
+                </div>
                 <div class="card-body">
-                    <h5 class="card-title">Your Medications</h5>
-                    <div class="table-responsive">
-                        <table class="table">
-                            <thead>
-                                <tr>
-                                    <th>Medication</th>
-                                    <th>Dosage</th>
-                                    <th>Frequency</th>
-                                    <th>Reminder Times</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for med in medications %}
-                                <tr>
-                                    <td>{{ med.name }}</td>
-                                    <td>{{ med.dosage }}</td>
-                                    <td>{{ med.frequency }}</td>
-                                    <td>
-                                        <div class="reminder-times" data-med-id="{{ med.id }}">
-                                            {% if med.reminder_times %}
-                                                {% for time in med.reminder_times.split(',') %}
-                                                    <span class="badge bg-info me-1">{{ time }}</span>
-                                                {% endfor %}
-                                            {% else %}
-                                                No reminders set
-                                            {% endif %}
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <button class="btn btn-sm btn-primary edit-reminder" data-med-id="{{ med.id }}">
-                                            Edit Reminders
-                                        </button>
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
+                    {% if medications %}
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Medication</th>
+                                        <th>Dosage</th>
+                                        <th>Next Reminder</th>
+                                        <th>Time Until</th>
+                                        <th>Notes</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for med in medications %}
+                                        <tr>
+                                            <td>{{ med.medication.name }}</td>
+                                            <td>{{ med.medication.dosage }}</td>
+                                            <td>{{ med.next_reminder.strftime('%I:%M %p') }}</td>
+                                            <td>
+                                                {% set hours = (med.time_until.total_seconds() / 3600) | int %}
+                                                {% set minutes = ((med.time_until.total_seconds() % 3600) / 60) | int %}
+                                                {% if hours > 0 %}
+                                                    {{ hours }}h
+                                                {% endif %}
+                                                {{ minutes }}m
+                                            </td>
+                                            <td>{{ med.medication.notes }}</td>
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    {% else %}
+                        <div class="alert alert-info">
+                            No medication reminders set. 
+                            <a href="{{ url_for('medication.index') }}" class="alert-link">Add some medications</a> 
+                            and enable reminders to see them here.
+                        </div>
+                    {% endif %}
                 </div>
             </div>
         </div>
     </div>
 </div>
-
-<!-- Modal for editing reminders -->
-<div class="modal fade" id="reminderModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Reminders</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body">
-                <form id="reminderForm">
-                    <input type="hidden" id="medication_id">
-                    <div class="mb-3">
-                        <label class="form-label">Enable Reminders</label>
-                        <div class="form-check form-switch">
-                            <input class="form-check-input" type="checkbox" id="reminder_enabled">
-                            <label class="form-check-label" for="reminder_enabled">Active</label>
-                        </div>
-                    </div>
-                    <div id="reminder_times_container">
-                        <div class="mb-3">
-                            <label class="form-label">Reminder Times</label>
-                            <div class="d-flex align-items-center mb-2">
-                                <input type="time" class="form-control reminder-time">
-                                <button type="button" class="btn btn-danger ms-2 remove-time">
-                                    <i class="bi bi-trash"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <button type="button" class="btn btn-secondary" id="add_time">
-                            <i class="bi bi-plus-lg"></i> Add Time
-                        </button>
-                    </div>
-                </form>
-            </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-                <button type="button" class="btn btn-primary" id="save_reminders">Save changes</button>
-            </div>
-        </div>
-    </div>
-</div>
-{% endblock %}
-
-{% block scripts %}
-<script>
-let notificationPermission = false;
-
-// Check if the browser supports notifications
-if ('Notification' in window) {
-    if (Notification.permission === 'granted') {
-        notificationPermission = true;
-        updateNotificationStatus();
-    } else if (Notification.permission !== 'denied') {
-        document.getElementById('enable-notifications').style.display = 'block';
-    }
-}
-
-function updateNotificationStatus() {
-    const statusElement = document.getElementById('notification-status');
-    if (notificationPermission) {
-        statusElement.className = 'alert alert-success';
-        statusElement.textContent = 'Notifications are enabled!';
-        document.getElementById('enable-notifications').style.display = 'none';
-    } else {
-        statusElement.className = 'alert alert-warning';
-        statusElement.textContent = 'Notifications are disabled. Enable them to receive medication reminders.';
-    }
-}
-
-document.getElementById('enable-notifications').addEventListener('click', async () => {
-    try {
-        const permission = await Notification.requestPermission();
-        notificationPermission = permission === 'granted';
-        updateNotificationStatus();
-    } catch (error) {
-        console.error('Error requesting notification permission:', error);
-    }
-});
-
-// Modal handling
-const reminderModal = new bootstrap.Modal(document.getElementById('reminderModal'));
-const reminderForm = document.getElementById('reminderForm');
-let currentMedId = null;
-
-// Add new time field
-document.getElementById('add_time').addEventListener('click', () => {
-    const container = document.createElement('div');
-    container.className = 'd-flex align-items-center mb-2';
-    container.innerHTML = `
-        <input type="time" class="form-control reminder-time">
-        <button type="button" class="btn btn-danger ms-2 remove-time">
-            <i class="bi bi-trash"></i>
-        </button>
-    `;
-    document.querySelector('#reminder_times_container .mb-3').appendChild(container);
-});
-
-// Remove time field
-document.addEventListener('click', (e) => {
-    if (e.target.closest('.remove-time')) {
-        e.target.closest('.d-flex').remove();
-    }
-});
-
-// Edit reminder button click
-document.querySelectorAll('.edit-reminder').forEach(button => {
-    button.addEventListener('click', async () => {
-        currentMedId = button.dataset.medId;
-        document.getElementById('medication_id').value = currentMedId;
-        
-        // Fetch current reminder settings
-        const response = await fetch(`/api/medication/${currentMedId}/reminders`);
-        const data = await response.json();
-        
-        document.getElementById('reminder_enabled').checked = data.reminder_enabled;
-        
-        // Clear existing time fields
-        const timeContainer = document.querySelector('#reminder_times_container .mb-3');
-        timeContainer.innerHTML = '';
-        
-        // Add time fields for existing times
-        if (data.reminder_times) {
-            data.reminder_times.split(',').forEach(time => {
-                const container = document.createElement('div');
-                container.className = 'd-flex align-items-center mb-2';
-                container.innerHTML = `
-                    <input type="time" class="form-control reminder-time" value="${time}">
-                    <button type="button" class="btn btn-danger ms-2 remove-time">
-                        <i class="bi bi-trash"></i>
-                    </button>
-                `;
-                timeContainer.appendChild(container);
-            });
-        }
-        
-        reminderModal.show();
-    });
-});
-
-// Save reminders
-document.getElementById('save_reminders').addEventListener('click', async () => {
-    const times = Array.from(document.querySelectorAll('.reminder-time'))
-        .map(input => input.value)
-        .filter(time => time !== '');
-    
-    const data = {
-        reminder_enabled: document.getElementById('reminder_enabled').checked,
-        reminder_times: times.join(',')
-    };
-    
-    try {
-        const response = await fetch(`/api/medication/${currentMedId}/reminders`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(data)
-        });
-        
-        if (response.ok) {
-            location.reload();
-        } else {
-            alert('Error saving reminders');
-        }
-    } catch (error) {
-        console.error('Error saving reminders:', error);
-        alert('Error saving reminders');
-    }
-});
-
-// Check for reminders every minute
-setInterval(async () => {
-    if (!notificationPermission) return;
-    
-    try {
-        const response = await fetch('/api/check_reminders');
-        const reminders = await response.json();
-        
-        reminders.forEach(reminder => {
-            new Notification(`Time to take ${reminder.name}`, {
-                body: `Take ${reminder.dosage} of ${reminder.name}\n${reminder.notes || ''}`,
-                icon: '/static/icon.png'
-            });
-        });
-    } catch (error) {
-        console.error('Error checking reminders:', error);
-    }
-}, 60000);
-
-// Initial notification status update
-updateNotificationStatus();
-</script>
 {% endblock %}
