@@ -136,6 +136,46 @@ def index():
         flash('Error loading medications', 'error')
         return render_template('error.html', error=str(e)), 500
 
+@medication_bp.route('/profile', methods=['GET', 'POST'])
+def profile():
+    try:
+        profile = UserProfile.query.first()
+        if profile is None:
+            profile = UserProfile(
+                name="Default User",
+                date_of_birth=datetime.now(local_timezone),
+                weight=0,
+                height=0
+            )
+            db.session.add(profile)
+            db.session.commit()
+
+        if request.method == 'POST':
+            try:
+                profile.name = request.form['name']
+                date_str = request.form.get('date_of_birth')
+                if date_str:
+                    profile.date_of_birth = datetime.strptime(date_str, '%Y-%m-%d').replace(tzinfo=local_timezone)
+                profile.gender = request.form.get('gender')
+                profile.height = request.form.get('height', type=float)
+                profile.weight = request.form.get('weight', type=float)
+                profile.blood_type = request.form.get('blood_type')
+                profile.allergies = request.form.get('allergies')
+                profile.medical_conditions = request.form.get('medical_conditions')
+                
+                db.session.commit()
+                flash('Profile updated successfully!', 'success')
+                return redirect(url_for('medication.profile'))
+            except Exception as e:
+                logger.error(f'Error updating profile: {str(e)}')
+                db.session.rollback()
+                flash('Error updating profile', 'error')
+                
+        return render_template('profile.html', profile=profile)
+    except Exception as e:
+        logger.error(f'Error in profile route: {str(e)}')
+        return render_template('error.html', error=str(e)), 500
+
 @medication_bp.route('/add', methods=['GET', 'POST'])
 def add_medication():
     if request.method == 'POST':
