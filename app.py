@@ -27,8 +27,39 @@ medication_bp = Blueprint('medication', __name__, url_prefix='/medication')
 emergency_contacts_bp = Blueprint('emergency_contacts', __name__, url_prefix='/emergency-contacts')
 vitals_bp = Blueprint('vitals', __name__, url_prefix='/vitals')
 
+# Vitals routes
+@vitals_bp.route('/')
+def vitals():
+    return render_template('vitals.html')
+
+@vitals_bp.route('/add', methods=['GET', 'POST'])
+def add_vitals():
+    if request.method == 'POST':
+        # Add vitals logic here
+        return redirect(url_for('vitals.vitals'))
+    return render_template('add_vitals.html')
+
+@vitals_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
+def edit_vitals(id):
+    if request.method == 'POST':
+        # Edit vitals logic here
+        return redirect(url_for('vitals.vitals'))
+    return render_template('edit_vitals.html')
+
+@vitals_bp.route('/delete/<int:id>')
+def delete_vitals(id):
+    # Delete vitals logic here
+    return redirect(url_for('vitals.vitals'))
+
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
+
+# Register all blueprints after defining their routes
+app.register_blueprint(bp)
+app.register_blueprint(bt)
+app.register_blueprint(medication_bp)
+app.register_blueprint(emergency_contacts_bp)
+app.register_blueprint(vitals_bp)
 
 # Set timezone to local timezone (Israel)
 local_timezone = zoneinfo.ZoneInfo("Asia/Jerusalem")
@@ -803,37 +834,6 @@ def reset_data():
 def inject_theme():
     """Make theme available to all templates"""
     return {'theme': session.get('theme', 'light')}
-
-# Register blueprints
-app.register_blueprint(bp)
-app.register_blueprint(bt)
-app.register_blueprint(medication_bp)
-app.register_blueprint(emergency_contacts_bp)
-app.register_blueprint(vitals_bp)
-
-# Vitals routes
-@vitals_bp.route('/')
-def vitals():
-    return render_template('vitals.html')
-
-@vitals_bp.route('/add', methods=['GET', 'POST'])
-def add_vitals():
-    if request.method == 'POST':
-        # Add vitals logic here
-        return redirect(url_for('vitals.vitals'))
-    return render_template('add_vitals.html')
-
-@vitals_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
-def edit_vitals(id):
-    if request.method == 'POST':
-        # Edit vitals logic here
-        return redirect(url_for('vitals.vitals'))
-    return render_template('edit_vitals.html')
-
-@vitals_bp.route('/delete/<int:id>')
-def delete_vitals(id):
-    # Delete vitals logic here
-    return redirect(url_for('vitals.vitals'))
 
 if __name__ == '__main__':
     # Get port from environment variable (Render sets this) or use 5001 as default
