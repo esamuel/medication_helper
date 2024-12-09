@@ -1,5 +1,7 @@
 {% extends "base.html" %}
 
+{% block title %}Error{% endblock %}
+
 {% block content %}
 <div class="container mt-5">
     <div class="row justify-content-center">
@@ -9,16 +11,9 @@
                     <h4 class="mb-0">Error</h4>
                 </div>
                 <div class="card-body">
-                    {% with messages = get_flashed_messages() %}
-                        {% if messages %}
-                            {% for message in messages %}
-                                <div class="alert alert-danger">{{ message }}</div>
-                            {% endfor %}
-                        {% else %}
-                            <div class="alert alert-danger">An unexpected error occurred. Please try again.</div>
-                        {% endif %}
-                    {% endwith %}
-                    <a href="{{ url_for('medication.index') }}" class="btn btn-primary">Return to Home</a>
+                    <p class="lead">{{ error }}</p>
+                    <hr>
+                    <a href="{{ url_for('root') }}" class="btn btn-primary">Return to Home</a>
                 </div>
             </div>
         </div>

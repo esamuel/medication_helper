@@ -13,7 +13,10 @@ from flask_wtf.csrf import CSRFProtect
 load_dotenv()
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 logger.info('Starting up the Flask application...')
 
@@ -28,7 +31,23 @@ vitals_bp = Blueprint('vitals', __name__, url_prefix='/vitals')
 # Root route
 @app.route('/')
 def root():
-    return redirect(url_for('medication.index'))
+    try:
+        return redirect(url_for('medication.index'))
+    except Exception as e:
+        logger.error(f"Error in root route: {str(e)}")
+        return render_template('error.html', error=str(e)), 500
+
+# Error handlers
+@app.errorhandler(404)
+def not_found_error(error):
+    logger.error(f"404 error: {error}")
+    return render_template('error.html', error="Page not found"), 404
+
+@app.errorhandler(500)
+def internal_error(error):
+    logger.error(f"500 error: {error}")
+    db.session.rollback()
+    return render_template('error.html', error="Internal server error"), 500
 
 # Initialize CSRF protection
 csrf = CSRFProtect(app)
@@ -52,10 +71,12 @@ try:
         # Replace postgres:// with postgresql:// for SQLAlchemy
         database_url = database_url.replace('postgres://', 'postgresql://', 1)
         app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+        logger.info('Using PostgreSQL database')
     else:
         # Use SQLite for local development
         database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'medication_helper.db')
         app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{database_path}'
+        logger.info('Using SQLite database')
     
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
@@ -113,7 +134,7 @@ def index():
     except Exception as e:
         logger.error(f"Error fetching medications: {str(e)}")
         flash('Error loading medications', 'error')
-        return render_template('medications.html', medications=[])
+        return render_template('error.html', error=str(e)), 500
 
 @medication_bp.route('/add', methods=['GET', 'POST'])
 def add_medication():
@@ -135,6 +156,7 @@ def add_medication():
         except Exception as e:
             logger.error(f'Error adding medication: {str(e)}')
             flash('Error adding medication', 'error')
+            return render_template('error.html', error=str(e)), 500
     return render_template('add_medication.html')
 
 # Emergency Contacts routes
@@ -146,7 +168,7 @@ def index():
     except Exception as e:
         logger.error(f"Error fetching contacts: {str(e)}")
         flash('Error loading contacts', 'error')
-        return render_template('emergency_contacts.html', contacts=[])
+        return render_template('error.html', error=str(e)), 500
 
 @emergency_contacts_bp.route('/add', methods=['GET', 'POST'])
 def add_contact():
@@ -168,18 +190,27 @@ def add_contact():
         except Exception as e:
             logger.error(f'Error adding contact: {str(e)}')
             flash('Error adding contact', 'error')
+            return render_template('error.html', error=str(e)), 500
     return render_template('add_contact.html')
 
 # Vitals routes
 @vitals_bp.route('/')
 def index():
-    return render_template('vitals.html')
+    try:
+        return render_template('vitals.html')
+    except Exception as e:
+        logger.error(f"Error loading vitals page: {str(e)}")
+        return render_template('error.html', error=str(e)), 500
 
 @vitals_bp.route('/add', methods=['GET', 'POST'])
 def add_vitals():
-    if request.method == 'POST':
-        return redirect(url_for('vitals.index'))
-    return render_template('add_vitals.html')
+    try:
+        if request.method == 'POST':
+            return redirect(url_for('vitals.index'))
+        return render_template('add_vitals.html')
+    except Exception as e:
+        logger.error(f"Error in add vitals: {str(e)}")
+        return render_template('error.html', error=str(e)), 500
 
 # Register blueprints
 app.register_blueprint(medication_bp)
@@ -188,8 +219,12 @@ app.register_blueprint(vitals_bp)
 
 # Initialize database
 with app.app_context():
-    db.create_all()
-    logger.info("Database tables created successfully")
+    try:
+        db.create_all()
+        logger.info("Database tables created successfully")
+    except Exception as e:
+        logger.error(f"Error creating database tables: {str(e)}")
+        sys.exit(1)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5001))
