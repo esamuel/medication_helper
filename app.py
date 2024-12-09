@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, session, Blueprint
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime, timedelta, timezone
 import zoneinfo
@@ -7,6 +7,7 @@ from dotenv import load_dotenv
 import sys
 import logging
 import time
+from flask_wtf.csrf import CSRFProtect
 
 # Load environment variables from .env file
 load_dotenv()
@@ -18,6 +19,16 @@ logger.info('Starting up the Flask application...')
 
 # Initialize Flask app
 app = Flask(__name__)
+
+# Create blueprints
+bp = Blueprint('blood_pressure', __name__, url_prefix='/blood-pressure')
+bt = Blueprint('blood_tests', __name__, url_prefix='/blood-tests')
+medication_bp = Blueprint('medication', __name__, url_prefix='/medication')
+emergency_contacts_bp = Blueprint('emergency_contacts', __name__, url_prefix='/emergency-contacts')
+vitals_bp = Blueprint('vitals', __name__, url_prefix='/vitals')
+
+# Initialize CSRF protection
+csrf = CSRFProtect(app)
 
 # Set timezone to local timezone (Israel)
 local_timezone = zoneinfo.ZoneInfo("Asia/Jerusalem")
@@ -53,14 +64,22 @@ else:
 
 # Configure SQLAlchemy
 try:
-    # Use SQLite by default
-    database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'medication_helper.db')
-    app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{database_path}'
+    # Check for DATABASE_URL environment variable (used by Render.com)
+    database_url = os.environ.get('DATABASE_URL')
+    if database_url and database_url.startswith('postgres://'):
+        # Replace postgres:// with postgresql:// for SQLAlchemy
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
+        app.config['SQLALCHEMY_DATABASE_URI'] = database_url
+    else:
+        # Use SQLite for local development
+        database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'medication_helper.db')
+        app.config['SQLALCHEMY_DATABASE_URI'] = f'sqlite:///{database_path}'
+    
     app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
     
     # Initialize SQLAlchemy
     db = SQLAlchemy(app)
-    logger.info('Successfully configured SQLite database')
+    logger.info('Successfully configured database')
 except Exception as e:
     logger.error(f'Fatal database initialization error: {str(e)}')
     sys.exit(1)
@@ -223,83 +242,245 @@ def init_db(add_sample_data=False):
         raise
 
 # Initialize database when the app starts, but NEVER add sample data
-init_db(add_sample_data=False)
+with app.app_context():
+    db.create_all()
+    logger.info("Database tables created successfully")
+    convert_blood_sugar()
 
-@app.route('/')
+# Blood Pressure routes
+@bp.route('/', methods=['GET'])
+def index():
+    try:
+        blood_pressure_list = BloodPressure.query.order_by(BloodPressure.date_time.desc()).all()
+        return render_template('blood_pressure.html', blood_pressure=blood_pressure_list)
+    except Exception as e:
+        logger.error(f"Error fetching blood pressure: {str(e)}")
+        flash('Error loading blood pressure', 'error')
+        return render_template('blood_pressure.html', blood_pressure=[])
+
+@bp.route('/add', methods=['GET', 'POST'])
+def add_record():
+    if request.method == 'POST':
+        new_blood_pressure = BloodPressure(
+            systolic=request.form.get('systolic', type=int),
+            diastolic=request.form.get('diastolic', type=int),
+            pulse=request.form.get('pulse', type=int),
+            notes=request.form.get('notes')
+        )
+        
+        try:
+            db.session.add(new_blood_pressure)
+            db.session.commit()
+            flash('Blood pressure recorded successfully!', 'success')
+            return redirect(url_for('blood_pressure.index'))
+        except Exception as e:
+            logger.error(f'Error recording blood pressure: {str(e)}')
+            db.session.rollback()
+            flash('Error recording blood pressure.', 'error')
+    
+    return render_template('add_blood_pressure.html', now=datetime.now(local_timezone))
+
+@bp.route('/<int:id>/edit', methods=['GET', 'POST'])
+def edit_record(id):
+    try:
+        blood_pressure = BloodPressure.query.get_or_404(id)
+        
+        if request.method == 'POST':
+            blood_pressure.systolic = request.form.get('systolic', type=int)
+            blood_pressure.diastolic = request.form.get('diastolic', type=int)
+            blood_pressure.pulse = request.form.get('pulse', type=int)
+            blood_pressure.notes = request.form.get('notes')
+            
+            try:
+                db.session.commit()
+                flash('Blood pressure updated successfully!', 'success')
+                return redirect(url_for('blood_pressure.index'))
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error updating blood pressure: {str(e)}")
+                flash('Error updating blood pressure', 'error')
+                
+        return render_template('edit_blood_pressure.html', blood_pressure=blood_pressure)
+        
+    except Exception as e:
+        logger.error(f"Error in edit_blood_pressure: {str(e)}")
+        flash('Error accessing blood pressure', 'error')
+        return redirect(url_for('blood_pressure.index'))
+
+@bp.route('/<int:id>/delete')
+def delete_record(id):
+    try:
+        blood_pressure = BloodPressure.query.get_or_404(id)
+        db.session.delete(blood_pressure)
+        db.session.commit()
+        flash('Blood pressure deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting blood pressure: {str(e)}")
+        flash('Error deleting blood pressure', 'error')
+    
+    return redirect(url_for('blood_pressure.index'))
+
+# Blood Tests routes
+@bt.route('/', methods=['GET'])
+def index():
+    try:
+        blood_tests_list = BloodTests.query.order_by(BloodTests.date_time.desc()).all()
+        return render_template('blood_tests.html', blood_tests=blood_tests_list)
+    except Exception as e:
+        logger.error(f"Error fetching blood tests: {str(e)}")
+        flash('Error loading blood tests', 'error')
+        return render_template('blood_tests.html', blood_tests=[])
+
+@bt.route('/add', methods=['GET', 'POST'])
+def add_blood_test():
+    if request.method == 'POST':
+        new_blood_test = BloodTests(
+            blood_sugar=request.form.get('blood_sugar', type=float),
+            oxygen_saturation=request.form.get('oxygen_saturation', type=int),
+            notes=request.form.get('notes')
+        )
+        
+        try:
+            db.session.add(new_blood_test)
+            db.session.commit()
+            flash('Blood test recorded successfully!', 'success')
+            return redirect(url_for('blood_tests.index'))
+        except Exception as e:
+            logger.error(f'Error recording blood test: {str(e)}')
+            db.session.rollback()
+            flash('Error recording blood test.', 'error')
+    
+    return render_template('add_blood_tests.html', now=datetime.now(local_timezone))
+
+@bt.route('/<int:id>/edit', methods=['GET', 'POST'])
+def edit_blood_test(id):
+    try:
+        blood_test = BloodTests.query.get_or_404(id)
+        
+        if request.method == 'POST':
+            blood_test.blood_sugar = request.form.get('blood_sugar', type=float)
+            blood_test.oxygen_saturation = request.form.get('oxygen_saturation', type=int)
+            blood_test.notes = request.form.get('notes')
+            
+            try:
+                db.session.commit()
+                flash('Blood test updated successfully!', 'success')
+                return redirect(url_for('blood_tests.index'))
+            except Exception as e:
+                db.session.rollback()
+                logger.error(f"Error updating blood test: {str(e)}")
+                flash('Error updating blood test', 'error')
+                
+        return render_template('edit_blood_tests.html', blood_test=blood_test)
+        
+    except Exception as e:
+        logger.error(f"Error in edit_blood_test: {str(e)}")
+        flash('Error accessing blood test', 'error')
+        return redirect(url_for('blood_tests.index'))
+
+@bt.route('/<int:id>/delete')
+def delete_blood_test(id):
+    try:
+        blood_test = BloodTests.query.get_or_404(id)
+        db.session.delete(blood_test)
+        db.session.commit()
+        flash('Blood test deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f"Error deleting blood test: {str(e)}")
+        flash('Error deleting blood test', 'error')
+    
+    return redirect(url_for('blood_tests.index'))
+
+# Medication routes
+@medication_bp.route('/', methods=['GET'])
 def index():
     try:
         # Get the current time
-        current_time = datetime.now(local_timezone)
+        now = datetime.now(local_timezone)
         
-        # Get the current user's profile
-        profile = UserProfile.query.first()
-        if not profile:
-            # Create a default profile if none exists
-            profile = UserProfile(
-                name="Default User",
-                date_of_birth=current_time,
-                weight=0,
-                height=0
-            )
+        # Get all medications
+        medications = Medication.query.all()
+        
+        # Initialize lists for different categories
+        due_medications = []
+        upcoming_medications = []
+        other_medications = []
+        
+        for medication in medications:
+            if not medication.reminder_times:  # Skip if no reminder times set
+                other_medications.append(medication)
+                continue
+                
+            # Convert reminder times string to list of time objects
+            reminder_times = []
             try:
-                db.session.add(profile)
-                db.session.commit()
+                for time_str in medication.reminder_times.split(','):
+                    if time_str.strip():  # Skip empty strings
+                        hour, minute = map(int, time_str.strip().split(':'))
+                        reminder_time = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+                        reminder_times.append(reminder_time)
             except Exception as e:
-                logger.error(f"Error creating default profile: {str(e)}")
-                db.session.rollback()
-                flash("Error creating default profile", "error")
-                return render_template('error.html'), 500
-        
-        # Get latest blood pressure with error handling
-        try:
-            latest_blood_pressure = BloodPressure.query.order_by(BloodPressure.date_time.desc()).first()
-        except Exception as e:
-            logger.error(f"Error fetching blood pressure: {str(e)}")
-            latest_blood_pressure = None
-        
-        # Get latest blood tests with error handling
-        try:
-            latest_blood_tests = BloodTests.query.order_by(BloodTests.date_time.desc()).first()
-        except Exception as e:
-            logger.error(f"Error fetching blood tests: {str(e)}")
-            latest_blood_tests = None
-        
-        # Get medications with error handling
-        try:
-            medications = Medication.query.all()
+                logger.error(f"Error parsing reminder times for medication {medication.id}: {str(e)}")
+                other_medications.append(medication)
+                continue
             
-            # Process medication times safely
-            for med in medications:
-                try:
-                    if med.reminder_times and med.reminder_times.strip():
-                        # If reminder_times exists and is not empty, use the first time
-                        times = med.reminder_times.split(',')
-                        med.time = times[0].strip() if times else "08:00"
-                    else:
-                        # Default to morning if no specific time is set
-                        med.time = "08:00"
-                except Exception as e:
-                    logger.error(f"Error processing medication times for med {med.id}: {str(e)}")
-                    med.time = "08:00"  # Set default time on error
-                    
-        except Exception as e:
-            logger.error(f"Error fetching medications: {str(e)}")
-            medications = []
+            # Find the next reminder time
+            next_reminder = None
+            for reminder_time in reminder_times:
+                # If reminder time is earlier today, move it to tomorrow
+                if reminder_time < now:
+                    reminder_time = reminder_time + timedelta(days=1)
+                
+                if next_reminder is None or reminder_time < next_reminder:
+                    next_reminder = reminder_time
             
-        return render_template('index.html',
-                             profile=profile,
-                             latest_blood_pressure=latest_blood_pressure,
-                             latest_blood_tests=latest_blood_tests,
-                             medications=medications,
-                             current_time=current_time)
-                             
+            if next_reminder is None:
+                other_medications.append(medication)
+                continue
+            
+            # Calculate time until next reminder
+            time_until_reminder = next_reminder - now
+            
+            # If last reminded time exists and is after the previous occurrence of this reminder,
+            # the medication has been taken
+            previous_occurrence = next_reminder
+            if next_reminder > now:
+                previous_occurrence = next_reminder - timedelta(days=1)
+            
+            if medication.last_reminded and medication.last_reminded > previous_occurrence:
+                other_medications.append(medication)
+            elif time_until_reminder <= timedelta(hours=1):  # Due within the next hour
+                due_medications.append({
+                    'medication': medication,
+                    'next_reminder': next_reminder,
+                    'time_until': time_until_reminder
+                })
+            elif time_until_reminder <= timedelta(hours=4):  # Upcoming in the next 4 hours
+                upcoming_medications.append({
+                    'medication': medication,
+                    'next_reminder': next_reminder,
+                    'time_until': time_until_reminder
+                })
+            else:
+                other_medications.append(medication)
+        
+        # Sort medications by time until next reminder
+        due_medications.sort(key=lambda x: x['time_until'])
+        upcoming_medications.sort(key=lambda x: x['time_until'])
+        
+        return render_template('index.html', 
+                            due_medications=due_medications,
+                            upcoming_medications=upcoming_medications,
+                            other_medications=other_medications,
+                            now=now)
     except Exception as e:
         logger.error(f"Error in index route: {str(e)}")
-        db.session.rollback()  # Ensure any failed transaction is rolled back
         flash("An error occurred while loading the page", "error")
         return render_template('error.html'), 500
 
-@app.route('/add', methods=['GET', 'POST'])
+@medication_bp.route('/add', methods=['GET', 'POST'])
 def add_medication():
     if request.method == 'POST':
         name = request.form['name']
@@ -307,28 +488,32 @@ def add_medication():
         frequency = request.form['frequency']
         time = request.form['time']
         notes = request.form['notes']
-
-        new_medication = Medication(
-            name=name,
-            dosage=dosage,
-            frequency=frequency,
-            time=time,
-            notes=notes
-        )
-
+        reminder_enabled = 'reminder_enabled' in request.form
+        reminder_times = request.form.get('reminder_times', '')
+        
         try:
+            new_medication = Medication(
+                name=name,
+                dosage=dosage,
+                frequency=frequency,
+                time=time,
+                notes=notes,
+                reminder_enabled=reminder_enabled,
+                reminder_times=reminder_times
+            )
+            
             db.session.add(new_medication)
             db.session.commit()
             flash('Medication added successfully!', 'success')
-            return redirect(url_for('index'))
+            return redirect(url_for('medication.index'))
         except Exception as e:
             logger.error(f'Error adding medication: {str(e)}')
             flash('There was an error adding your medication.', 'error')
-            return redirect(url_for('add_medication'))
+            return redirect(url_for('medication.add_medication'))
 
     return render_template('add.html')
 
-@app.route('/edit/<int:id>', methods=['GET', 'POST'])
+@medication_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
 def edit_medication(id):
     medication = Medication.query.get_or_404(id)
     
@@ -338,19 +523,21 @@ def edit_medication(id):
         medication.frequency = request.form['frequency']
         medication.time = request.form['time']
         medication.notes = request.form['notes']
-
+        medication.reminder_enabled = 'reminder_enabled' in request.form
+        medication.reminder_times = request.form.get('reminder_times', '')
+        
         try:
             db.session.commit()
             flash('Medication updated successfully!', 'success')
-            return redirect(url_for('index'))
+            return redirect(url_for('medication.index'))
         except Exception as e:
             logger.error(f'Error updating medication: {str(e)}')
             flash('There was an error updating your medication.', 'error')
-            return redirect(url_for('edit_medication', id=id))
+            return redirect(url_for('medication.edit_medication', id=id))
 
     return render_template('edit.html', medication=medication)
 
-@app.route('/delete/<int:id>')
+@medication_bp.route('/delete/<int:id>')
 def delete_medication(id):
     medication = Medication.query.get_or_404(id)
     
@@ -362,9 +549,9 @@ def delete_medication(id):
         logger.error(f'Error deleting medication: {str(e)}')
         flash('There was an error deleting your medication.', 'error')
     
-    return redirect(url_for('index'))
+    return redirect(url_for('medication.index'))
 
-@app.route('/profile', methods=['GET', 'POST'])
+@medication_bp.route('/profile', methods=['GET', 'POST'])
 def profile():
     try:
         profile = UserProfile.query.first()
@@ -435,224 +622,40 @@ def profile():
         flash('An unexpected error occurred. Please try again.', 'error')
         return render_template('error.html'), 500
 
-@app.route('/emergency-contacts', methods=['GET'])
-def emergency_contacts():
-    contacts = EmergencyContact.query.order_by(EmergencyContact.created_at.desc()).all()
-    return render_template('emergency_contacts.html', contacts=contacts)
-
-@app.route('/emergency-contacts/add', methods=['GET', 'POST'])
-def add_emergency_contact():
+@medication_bp.route('/settings', methods=['GET', 'POST'])
+def settings():
     if request.method == 'POST':
-        new_contact = EmergencyContact(
-            name=request.form['name'],
-            relationship=request.form['relationship'],
-            phone_primary=request.form['phone_primary'],
-            phone_secondary=request.form['phone_secondary'],
-            email=request.form['email'],
-            address=request.form['address'],
-            notes=request.form['notes']
-        )
+        action = request.form.get('action')
         
-        try:
-            db.session.add(new_contact)
-            db.session.commit()
-            flash('Emergency contact added successfully!', 'success')
-            return redirect(url_for('emergency_contacts'))
-        except Exception as e:
-            logger.error(f'Error adding emergency contact: {str(e)}')
-            db.session.rollback()
-            flash('Error adding emergency contact.', 'error')
-    
-    return render_template('add_emergency_contact.html')
-
-@app.route('/emergency-contacts/edit/<int:id>', methods=['GET', 'POST'])
-def edit_emergency_contact(id):
-    contact = EmergencyContact.query.get_or_404(id)
-    
-    if request.method == 'POST':
-        contact.name = request.form['name']
-        contact.relationship = request.form['relationship']
-        contact.phone_primary = request.form['phone_primary']
-        contact.phone_secondary = request.form['phone_secondary']
-        contact.email = request.form['email']
-        contact.address = request.form['address']
-        contact.notes = request.form['notes']
-        
-        try:
-            db.session.commit()
-            flash('Emergency contact updated successfully!', 'success')
-            return redirect(url_for('emergency_contacts'))
-        except Exception as e:
-            logger.error(f'Error updating emergency contact: {str(e)}')
-            db.session.rollback()
-            flash('Error updating emergency contact.', 'error')
-    
-    return render_template('edit_emergency_contact.html', contact=contact)
-
-@app.route('/emergency-contacts/delete/<int:id>')
-def delete_emergency_contact(id):
-    contact = EmergencyContact.query.get_or_404(id)
-    
-    try:
-        db.session.delete(contact)
-        db.session.commit()
-        flash('Emergency contact deleted successfully!', 'success')
-    except Exception as e:
-        logger.error(f'Error deleting emergency contact: {str(e)}')
-        db.session.rollback()
-        flash('Error deleting emergency contact.', 'error')
-    
-    return redirect(url_for('emergency_contacts'))
-
-@app.route('/blood-pressure', methods=['GET'])
-def blood_pressure():
-    try:
-        blood_pressure_list = BloodPressure.query.order_by(BloodPressure.date_time.desc()).all()
-        return render_template('blood_pressure.html', blood_pressure=blood_pressure_list)
-    except Exception as e:
-        logger.error(f"Error fetching blood pressure: {str(e)}")
-        flash('Error loading blood pressure', 'error')
-        return render_template('blood_pressure.html', blood_pressure=[])
-
-@app.route('/blood-pressure/add', methods=['GET', 'POST'])
-def add_blood_pressure():
-    if request.method == 'POST':
-        new_blood_pressure = BloodPressure(
-            systolic=request.form.get('systolic', type=int),
-            diastolic=request.form.get('diastolic', type=int),
-            pulse=request.form.get('pulse', type=int),
-            notes=request.form.get('notes')
-        )
-        
-        try:
-            db.session.add(new_blood_pressure)
-            db.session.commit()
-            flash('Blood pressure recorded successfully!', 'success')
-            return redirect(url_for('blood_pressure'))
-        except Exception as e:
-            logger.error(f'Error recording blood pressure: {str(e)}')
-            db.session.rollback()
-            flash('Error recording blood pressure.', 'error')
-    
-    return render_template('add_blood_pressure.html', now=datetime.now(local_timezone))
-
-@app.route('/edit_blood_pressure/<int:id>', methods=['GET', 'POST'])
-def edit_blood_pressure(id):
-    try:
-        blood_pressure = BloodPressure.query.get_or_404(id)
-        
-        if request.method == 'POST':
-            blood_pressure.systolic = request.form.get('systolic', type=int)
-            blood_pressure.diastolic = request.form.get('diastolic', type=int)
-            blood_pressure.pulse = request.form.get('pulse', type=int)
-            blood_pressure.notes = request.form.get('notes')
+        if action == 'toggle_theme':
+            # Toggle theme in session
+            current_theme = session.get('theme', 'light')
+            session['theme'] = 'dark' if current_theme == 'light' else 'light'
+            return jsonify({'theme': session['theme']})
             
+        elif action == 'reset_data':
             try:
-                db.session.commit()
-                flash('Blood pressure updated successfully!', 'success')
-                return redirect(url_for('blood_pressure'))
+                # Drop all tables
+                db.drop_all()
+                # Recreate all tables
+                db.create_all()
+                flash('All data has been reset successfully!', 'success')
             except Exception as e:
-                db.session.rollback()
-                logger.error(f"Error updating blood pressure: {str(e)}")
-                flash('Error updating blood pressure', 'error')
+                logger.error(f"Error resetting data: {str(e)}")
+                flash('Error resetting data', 'error')
                 
-        return render_template('edit_blood_pressure.html', blood_pressure=blood_pressure)
-        
-    except Exception as e:
-        logger.error(f"Error in edit_blood_pressure: {str(e)}")
-        flash('Error accessing blood pressure', 'error')
-        return redirect(url_for('blood_pressure'))
-
-@app.route('/delete_blood_pressure/<int:id>')
-def delete_blood_pressure(id):
-    try:
-        blood_pressure = BloodPressure.query.get_or_404(id)
-        db.session.delete(blood_pressure)
-        db.session.commit()
-        flash('Blood pressure deleted successfully!', 'success')
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error deleting blood pressure: {str(e)}")
-        flash('Error deleting blood pressure', 'error')
+            return redirect(url_for('medication.settings'))
     
-    return redirect(url_for('blood_pressure'))
+    # Get current theme
+    theme = session.get('theme', 'light')
+    return render_template('settings.html', theme=theme)
 
-@app.route('/blood-tests', methods=['GET'])
-def blood_tests():
-    try:
-        blood_tests_list = BloodTests.query.order_by(BloodTests.date_time.desc()).all()
-        return render_template('blood_tests.html', blood_tests=blood_tests_list)
-    except Exception as e:
-        logger.error(f"Error fetching blood tests: {str(e)}")
-        flash('Error loading blood tests', 'error')
-        return render_template('blood_tests.html', blood_tests=[])
-
-@app.route('/blood-tests/add', methods=['GET', 'POST'])
-def add_blood_tests():
-    if request.method == 'POST':
-        new_blood_test = BloodTests(
-            blood_sugar=request.form.get('blood_sugar', type=float),
-            oxygen_saturation=request.form.get('oxygen_saturation', type=int),
-            notes=request.form.get('notes')
-        )
-        
-        try:
-            db.session.add(new_blood_test)
-            db.session.commit()
-            flash('Blood test recorded successfully!', 'success')
-            return redirect(url_for('blood_tests'))
-        except Exception as e:
-            logger.error(f'Error recording blood test: {str(e)}')
-            db.session.rollback()
-            flash('Error recording blood test.', 'error')
-    
-    return render_template('add_blood_tests.html', now=datetime.now(local_timezone))
-
-@app.route('/edit_blood_tests/<int:id>', methods=['GET', 'POST'])
-def edit_blood_tests(id):
-    try:
-        blood_test = BloodTests.query.get_or_404(id)
-        
-        if request.method == 'POST':
-            blood_test.blood_sugar = request.form.get('blood_sugar', type=float)
-            blood_test.oxygen_saturation = request.form.get('oxygen_saturation', type=int)
-            blood_test.notes = request.form.get('notes')
-            
-            try:
-                db.session.commit()
-                flash('Blood test updated successfully!', 'success')
-                return redirect(url_for('blood_tests'))
-            except Exception as e:
-                db.session.rollback()
-                logger.error(f"Error updating blood test: {str(e)}")
-                flash('Error updating blood test', 'error')
-                
-        return render_template('edit_blood_tests.html', blood_test=blood_test)
-        
-    except Exception as e:
-        logger.error(f"Error in edit_blood_tests: {str(e)}")
-        flash('Error accessing blood test', 'error')
-        return redirect(url_for('blood_tests'))
-
-@app.route('/delete_blood_tests/<int:id>')
-def delete_blood_tests(id):
-    try:
-        blood_test = BloodTests.query.get_or_404(id)
-        db.session.delete(blood_test)
-        db.session.commit()
-        flash('Blood test deleted successfully!', 'success')
-    except Exception as e:
-        db.session.rollback()
-        logger.error(f"Error deleting blood test: {str(e)}")
-        flash('Error deleting blood test', 'error')
-    
-    return redirect(url_for('blood_tests'))
-
-@app.route('/reminders')
+@medication_bp.route('/reminders')
 def reminders():
     medications = Medication.query.all()
     return render_template('reminders.html', medications=medications)
 
+# API routes
 @app.route('/api/medication/<int:id>/reminders', methods=['GET'])
 def get_medication_reminders(id):
     medication = Medication.query.get_or_404(id)
@@ -705,6 +708,82 @@ def check_reminders():
     
     return jsonify(due_medications)
 
+# Emergency Contacts routes
+@emergency_contacts_bp.route('/', methods=['GET'])
+def index():
+    contacts = EmergencyContact.query.order_by(EmergencyContact.created_at.desc()).all()
+    return render_template('emergency_contacts.html', contacts=contacts)
+
+@emergency_contacts_bp.route('/add', methods=['GET', 'POST'])
+def add_emergency_contact():
+    if request.method == 'POST':
+        new_contact = EmergencyContact(
+            name=request.form['name'],
+            relationship=request.form['relationship'],
+            phone_primary=request.form['phone_primary'],
+            phone_secondary=request.form['phone_secondary'],
+            email=request.form['email'],
+            address=request.form['address'],
+            notes=request.form['notes']
+        )
+        
+        try:
+            db.session.add(new_contact)
+            db.session.commit()
+            flash('Emergency contact added successfully!', 'success')
+            return redirect(url_for('emergency_contacts.index'))
+        except Exception as e:
+            logger.error(f'Error adding emergency contact: {str(e)}')
+            db.session.rollback()
+            flash('Error adding emergency contact.', 'error')
+    
+    return render_template('add_emergency_contact.html')
+
+@emergency_contacts_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
+def edit_emergency_contact(id):
+    contact = EmergencyContact.query.get_or_404(id)
+    
+    if request.method == 'POST':
+        contact.name = request.form['name']
+        contact.relationship = request.form['relationship']
+        contact.phone_primary = request.form['phone_primary']
+        contact.phone_secondary = request.form['phone_secondary']
+        contact.email = request.form['email']
+        contact.address = request.form['address']
+        contact.notes = request.form['notes']
+        
+        try:
+            db.session.commit()
+            flash('Emergency contact updated successfully!', 'success')
+            return redirect(url_for('emergency_contacts.index'))
+        except Exception as e:
+            logger.error(f'Error updating emergency contact: {str(e)}')
+            db.session.rollback()
+            flash('Error updating emergency contact.', 'error')
+    
+    return render_template('edit_emergency_contact.html', contact=contact)
+
+@emergency_contacts_bp.route('/delete/<int:id>')
+def delete_emergency_contact(id):
+    contact = EmergencyContact.query.get_or_404(id)
+    
+    try:
+        db.session.delete(contact)
+        db.session.commit()
+        flash('Emergency contact deleted successfully!', 'success')
+    except Exception as e:
+        db.session.rollback()
+        logger.error(f'Error deleting emergency contact: {str(e)}')
+        flash('Error deleting emergency contact.', 'error')
+    
+    return redirect(url_for('emergency_contacts.index'))
+
+# Root route
+@app.route('/')
+def root():
+    return redirect(url_for('medication.index'))
+
+# Reset data route
 @app.route('/reset_data', methods=['POST'])
 def reset_data():
     try:
@@ -719,41 +798,48 @@ def reset_data():
     
     return redirect(url_for('index'))
 
-@app.route('/settings', methods=['GET', 'POST'])
-def settings():
-    if request.method == 'POST':
-        action = request.form.get('action')
-        
-        if action == 'toggle_theme':
-            # Toggle theme in session
-            current_theme = session.get('theme', 'light')
-            session['theme'] = 'dark' if current_theme == 'light' else 'light'
-            return jsonify({'theme': session['theme']})
-            
-        elif action == 'reset_data':
-            try:
-                # Drop all tables
-                db.drop_all()
-                # Recreate all tables
-                db.create_all()
-                flash('All data has been reset successfully!', 'success')
-            except Exception as e:
-                logger.error(f"Error resetting data: {str(e)}")
-                flash('Error resetting data', 'error')
-                
-            return redirect(url_for('settings'))
-    
-    # Get current theme
-    theme = session.get('theme', 'light')
-    return render_template('settings.html', theme=theme)
-
+# Context processor for theme
 @app.context_processor
 def inject_theme():
     """Make theme available to all templates"""
     return {'theme': session.get('theme', 'light')}
 
+# Register blueprints
+app.register_blueprint(bp)
+app.register_blueprint(bt)
+app.register_blueprint(medication_bp)
+app.register_blueprint(emergency_contacts_bp)
+app.register_blueprint(vitals_bp)
+
+# Vitals routes
+@vitals_bp.route('/')
+def vitals():
+    return render_template('vitals.html')
+
+@vitals_bp.route('/add', methods=['GET', 'POST'])
+def add_vitals():
+    if request.method == 'POST':
+        # Add vitals logic here
+        return redirect(url_for('vitals.vitals'))
+    return render_template('add_vitals.html')
+
+@vitals_bp.route('/edit/<int:id>', methods=['GET', 'POST'])
+def edit_vitals(id):
+    if request.method == 'POST':
+        # Edit vitals logic here
+        return redirect(url_for('vitals.vitals'))
+    return render_template('edit_vitals.html')
+
+@vitals_bp.route('/delete/<int:id>')
+def delete_vitals(id):
+    # Delete vitals logic here
+    return redirect(url_for('vitals.vitals'))
+
 if __name__ == '__main__':
-    app.run(debug=True)
+    # Get port from environment variable (Render sets this) or use 5001 as default
+    port = int(os.environ.get('PORT', 5001))
+    # When running on Render, we need to listen on 0.0.0.0
+    app.run(host='0.0.0.0', port=port, debug=True)
 else:
     # Initialize database when running under Gunicorn, but NEVER add sample data
     init_db(add_sample_data=False)

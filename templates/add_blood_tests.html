@@ -4,6 +4,7 @@
 <div class="container mt-4">
     <h2>Add Blood Test Record</h2>
     <form method="POST">
+        {{ csrf_token() }}
         <div class="row">
             <div class="col-md-6 mb-3">
                 <label for="blood_sugar" class="form-label">Blood Sugar (mg/dL)</label>

@@ -4,6 +4,7 @@
 <div class="container mt-4">
     <h2>Add Blood Pressure Record</h2>
     <form method="POST">
+        {{ csrf_token() }}
         <div class="row">
             <div class="col-md-4 mb-3">
                 <label for="systolic" class="form-label">Systolic Pressure (mmHg)</label>
